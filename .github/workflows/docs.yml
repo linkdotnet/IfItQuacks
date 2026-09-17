@@ -1,0 +1,33 @@
+name: Docs
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate-docs:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v6
+      with:
+        global-json-file: global.json
+
+    - name: Setup DocFX
+      run: dotnet tool install -g docfx
+
+    - name: DocFX Build
+      run: docfx docs/site/docfx.json
+
+    - name: Publish
+      uses: peaceiris/actions-gh-pages@v4
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: docs/site/_site
+        force_orphan: true
