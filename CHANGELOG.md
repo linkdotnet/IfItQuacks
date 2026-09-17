@@ -6,6 +6,8 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 ## [Unreleased]
 
+## [v1.1.0] - 2026-09-17
+
 ### Added
 
 - `[DuckTyped]` instance methods on structs. The receiver is passed by reference, so mutations reach the caller's value.
@@ -34,5 +36,6 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 - Anonymous types can be passed to `[DuckTyped]` methods and `Duck.As`.
 - Adapters forward `Equals`, `GetHashCode` and `ToString` to the wrapped instance; `Duck.Unwrap` returns it.
 
-[unreleased]: https://github.com/linkdotnet/IfItQuacks/compare/v1.0.0...HEAD
+[unreleased]: https://github.com/linkdotnet/IfItQuacks/compare/v1.1.0...HEAD
+[v1.1.0]: https://github.com/linkdotnet/IfItQuacks/compare/v1.0.0...v1.1.0
 [v1.0.0]: https://github.com/linkdotnet/IfItQuacks/compare/64a9c6ea49de0a82dd1cd59556dbaebca74381cb...v1.0.0
