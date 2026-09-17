@@ -12,7 +12,6 @@ public class ShapeMemberTests
             using IfItQuacks;
             using System;
 
-            [DuckShape]
             public interface INotifier { event EventHandler? Changed; void Raise(); }
 
             public class Model
@@ -47,7 +46,6 @@ public class ShapeMemberTests
             using IfItQuacks;
             using System.Collections.Generic;
 
-            [DuckShape]
             public interface ILookup { string this[string key] { get; set; } }
 
             public class Settings
@@ -76,7 +74,6 @@ public class ShapeMemberTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface ILookup { string this[string key] { get; } }
 
             public class List { public string this[int index] => ""; }
@@ -97,7 +94,6 @@ public class ShapeMemberTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface IGreeter
             {
                 string Name { get; }
@@ -125,7 +121,6 @@ public class ShapeMemberTests
         var source = $$"""
             using IfItQuacks;
 
-            [DuckShape]
             public interface IDoable { void Do(); {{member}} }
 
             public class A { public void Do() { } }

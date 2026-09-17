@@ -1,6 +1,5 @@
 namespace IfItQuacks.Sample.Assignability;
 
-[DuckShape]
 public interface IInventory
 {
     IEnumerable<string> Items { get; }
@@ -19,7 +18,6 @@ public class Warehouse
     }
 }
 
-[DuckShape]
 public interface ICoordinate
 {
     double X { get; }

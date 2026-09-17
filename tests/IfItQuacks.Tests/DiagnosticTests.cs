@@ -10,12 +10,11 @@ public class DiagnosticTests
     [InlineData("in")]
     [InlineData("out")]
     [InlineData("ref readonly")]
-    public void ByReferenceParameter_ReportsIfItQuacks004(string modifier)
+    public void ByReferenceInterfaceParameter_IsNotDuckTyped_ReportsIfItQuacks003(string modifier)
     {
         var source = $$"""
             using IfItQuacks;
 
-            [DuckShape]
             public interface IDoable { void Do(); }
 
             public static partial class Ops
@@ -26,7 +25,7 @@ public class DiagnosticTests
             """;
 
         var (_, diagnostics) = GeneratorTestHelper.RunGenerator(source);
-        Assert.Contains(diagnostics, d => d.Id == "IFITQUACKS004");
+        Assert.Contains(diagnostics, d => d.Id == "IFITQUACKS003");
     }
 
     [Theory]
@@ -37,7 +36,6 @@ public class DiagnosticTests
         var source = $$"""
             using IfItQuacks;
 
-            [DuckShape]
             public interface ICounter { void Increment(); int Count { get; } }
 
             {{declaration}} { public int Count { get; private set; } public void Increment() => Count++; }
@@ -64,7 +62,6 @@ public class DiagnosticTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface IDoable { void Do(); }
 
             public class C { public string NotDo() => ""; }
@@ -91,7 +88,6 @@ public class DiagnosticTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface IDoable { void Do(); }
 
             public static class Ops
@@ -103,24 +99,5 @@ public class DiagnosticTests
 
         var (_, diagnostics) = GeneratorTestHelper.RunGenerator(source);
         Assert.Contains(diagnostics, d => d.Id == "IFITQUACKS002");
-    }
-
-    [Fact]
-    public void NonShapeParameter_ReportsIfItQuacks003()
-    {
-        const string source = """
-            using IfItQuacks;
-
-            public interface IDoable { void Do(); }
-
-            public static partial class Ops
-            {
-                [DuckTyped]
-                public static void Foo(IDoable a) => a.Do();
-            }
-            """;
-
-        var (_, diagnostics) = GeneratorTestHelper.RunGenerator(source);
-        Assert.Contains(diagnostics, d => d.Id == "IFITQUACKS003");
     }
 }

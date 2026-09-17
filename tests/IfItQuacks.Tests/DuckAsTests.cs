@@ -13,7 +13,6 @@ public class DuckAsTests
             using System.Collections.Generic;
             using System.Linq;
 
-            [DuckShape]
             public interface IDoable { string Do(); }
 
             public class A { public string Do() => "A"; }
@@ -43,7 +42,6 @@ public class DuckAsTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface INameable { string Name { get; set; } }
 
             public class Person { public string Name { get; set; } = ""; }
@@ -74,7 +72,6 @@ public class DuckAsTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface IContainer<T> { T Get(); }
 
             public readonly struct IntBox(int value) { public int Get() => value; }
@@ -99,7 +96,6 @@ public class DuckAsTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface IDoable { void Do(); }
 
             public class RealImpl : IDoable { public void Do() { } }
@@ -128,7 +124,6 @@ public class DuckAsTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface IDoable { void Do(); }
 
             public class Rock { }
@@ -144,18 +139,16 @@ public class DuckAsTests
     }
 
     [Fact]
-    public void DuckAs_InterfaceWithoutDuckShape_ReportsIfItQuacks007()
+    public void DuckAs_ClassTarget_ReportsIfItQuacks007()
     {
         const string source = """
             using IfItQuacks;
 
-            public interface IDoable { void Do(); }
-
-            public class A { public void Do() { } }
+            public class A { }
 
             public static class Entry
             {
-                public static IDoable Run() => Duck.As<IDoable>(new A());
+                public static string Run() => Duck.As<string>(new A());
             }
             """;
 
@@ -169,7 +162,6 @@ public class DuckAsTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface ICounter { void Increment(); }
 
             public struct Counter { public int Count; public void Increment() => Count++; }
@@ -190,7 +182,6 @@ public class DuckAsTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface IDoable { void Do(); }
 
             public class A { public void Do() { } }
@@ -211,7 +202,6 @@ public class DuckAsTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface IDoable { void Do(); }
 
             public class A { public void Do() { } }
@@ -229,6 +219,6 @@ public class DuckAsTests
         var assembly = GeneratorTestHelper.EmitAndLoad(compilation);
         var exception = Assert.Throws<System.Reflection.TargetInvocationException>(() =>
             assembly.GetType("Entry")!.GetMethod("Run")!.Invoke(null, null));
-        Assert.Equal("DuckShapeMismatchException", exception.InnerException!.GetType().Name);
+        Assert.Equal("DuckTypeMismatchException", exception.InnerException!.GetType().Name);
     }
 }

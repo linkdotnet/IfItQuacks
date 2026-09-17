@@ -8,6 +8,7 @@
     <Project Path="samples/IfItQuacks.Sample.AnonymousTypes/IfItQuacks.Sample.AnonymousTypes.csproj" />
     <Project Path="samples/IfItQuacks.Sample.Assignability/IfItQuacks.Sample.Assignability.csproj" />
     <Project Path="samples/IfItQuacks.Sample.Conversion/IfItQuacks.Sample.Conversion.csproj" />
+    <Project Path="samples/IfItQuacks.Sample.FrameworkInterfaces/IfItQuacks.Sample.FrameworkInterfaces.csproj" />
     <Project Path="samples/IfItQuacks.Sample.Generics/IfItQuacks.Sample.Generics.csproj" />
     <Project Path="samples/IfItQuacks.Sample.Methods/IfItQuacks.Sample.Methods.csproj" />
     <Project Path="samples/IfItQuacks.Sample.Properties/IfItQuacks.Sample.Properties.csproj" />

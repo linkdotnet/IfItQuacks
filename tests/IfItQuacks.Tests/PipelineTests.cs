@@ -8,7 +8,6 @@ public class PipelineTests
     private const string Shapes = """
         using IfItQuacks;
 
-        [DuckShape]
         public interface IDoable { void Do(); }
 
         public class A { public void Do() { } }
@@ -85,7 +84,6 @@ public class PipelineTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface IContainer<T> { T Get(); }
 
             public class IntBox { public int Get() => 42; }

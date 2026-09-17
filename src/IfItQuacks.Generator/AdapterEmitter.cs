@@ -60,7 +60,7 @@ internal static class AdapterEmitter
             }
         }
 
-        EmitIdentityMembers(sb, shape, concreteType);
+        EmitIdentityMembers(sb, concreteType);
 
         if (concreteType.IsAnonymousType)
             sb.AppendLine($"        private static T {CastByExample}<T>(object value, global::System.Func<T> example) => (T)value;");
@@ -69,6 +69,7 @@ internal static class AdapterEmitter
         return sb.ToString();
     }
 
+    // Members are implemented explicitly, so interfaces inheriting same-named members (IEnumerable<T>.GetEnumerator) or declaring object members don't clash.
     private static void EmitMethod(StringBuilder sb, IMethodSymbol method, IMethodSymbol counterpart, string receiver)
     {
         var parameters = FormatParameters(method.Parameters);
@@ -77,12 +78,12 @@ internal static class AdapterEmitter
             SymbolEqualityComparer.Default.Equals(p.Type, counterpart.Parameters[i].Type)
                 ? Utilities.Argument(p)
                 : $"({counterpart.Parameters[i].Type.ToDisplayString()}){Utilities.Identifier(p.Name)}"));
-        sb.AppendLine($"        public {method.ReturnType.ToDisplayString()} {method.Name}({parameters}) => {receiver}.{method.Name}({args});");
+        sb.AppendLine($"        {method.ReturnType.ToDisplayString()} {Owner(method)}.{method.Name}({parameters}) => {receiver}.{method.Name}({args});");
     }
 
     private static void EmitProperty(StringBuilder sb, IPropertySymbol property, string receiver)
     {
-        sb.Append($"        public {property.Type.ToDisplayString()} {property.Name} {{ ");
+        sb.Append($"        {property.Type.ToDisplayString()} {Owner(property)}.{property.Name} {{ ");
         if (property.GetMethod is not null) sb.Append($"get => {receiver}.{property.Name}; ");
         if (property.SetMethod is not null) sb.Append($"set => {receiver}.{property.Name} = value; ");
         sb.AppendLine("}");
@@ -91,29 +92,25 @@ internal static class AdapterEmitter
     private static void EmitIndexer(StringBuilder sb, IPropertySymbol indexer, string receiver)
     {
         var args = string.Join(", ", indexer.Parameters.Select(Utilities.Argument));
-        sb.Append($"        public {indexer.Type.ToDisplayString()} this[{FormatParameters(indexer.Parameters)}] {{ ");
+        sb.Append($"        {indexer.Type.ToDisplayString()} {Owner(indexer)}.this[{FormatParameters(indexer.Parameters)}] {{ ");
         if (indexer.GetMethod is not null) sb.Append($"get => {receiver}[{args}]; ");
         if (indexer.SetMethod is not null) sb.Append($"set => {receiver}[{args}] = value; ");
         sb.AppendLine("}");
     }
 
     private static void EmitEvent(StringBuilder sb, IEventSymbol @event, string receiver) =>
-        sb.AppendLine($"        public event {@event.Type.ToDisplayString()} {@event.Name} {{ add => {receiver}.{@event.Name} += value; remove => {receiver}.{@event.Name} -= value; }}");
+        sb.AppendLine($"        event {@event.Type.ToDisplayString()} {Owner(@event)}.{@event.Name} {{ add => {receiver}.{@event.Name} += value; remove => {receiver}.{@event.Name} -= value; }}");
 
     // Adapters are boxed as the shape, so without forwarding two views of the same instance would neither be equal nor hash alike.
-    private static void EmitIdentityMembers(StringBuilder sb, INamedTypeSymbol shape, INamedTypeSymbol concreteType)
+    private static void EmitIdentityMembers(StringBuilder sb, INamedTypeSymbol concreteType)
     {
-        var declared = ShapeMatcher.GetShapeMembers(shape).OfType<IMethodSymbol>().ToList();
-        bool Declares(string name, int parameterCount) => declared.Any(m => m.Name == name && m.Parameters.Length == parameterCount);
-
         var isReference = concreteType.IsReferenceType;
-        if (!Declares(nameof(Equals), 1))
-            sb.AppendLine("        public override bool Equals(object? obj) => global::System.Object.Equals(_value, global::IfItQuacks.Duck.Unwrap(obj));");
-        if (!Declares(nameof(GetHashCode), 0))
-            sb.AppendLine($"        public override int GetHashCode() => {(isReference ? "_value?.GetHashCode() ?? 0" : "_value.GetHashCode()")};");
-        if (!Declares(nameof(ToString), 0))
-            sb.AppendLine($"        public override string ToString() => {(isReference ? "_value?.ToString()" : "_value.ToString()")} ?? string.Empty;");
+        sb.AppendLine("        public override bool Equals(object? obj) => global::System.Object.Equals(_value, global::IfItQuacks.Duck.Unwrap(obj));");
+        sb.AppendLine($"        public override int GetHashCode() => {(isReference ? "_value?.GetHashCode() ?? 0" : "_value.GetHashCode()")};");
+        sb.AppendLine($"        public override string ToString() => {(isReference ? "_value?.ToString()" : "_value.ToString()")} ?? string.Empty;");
     }
+
+    private static string Owner(ISymbol member) => member.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
     private static string AnonymousWitness(INamedTypeSymbol anonymousType) =>
         "new { " + string.Join(", ", anonymousType.GetMembers().OfType<IPropertySymbol>().Select(p =>

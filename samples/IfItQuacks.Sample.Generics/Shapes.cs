@@ -1,6 +1,5 @@
 namespace IfItQuacks.Sample.Generics;
 
-[DuckShape]
 public interface IContainer<out T>
 {
     T Get();

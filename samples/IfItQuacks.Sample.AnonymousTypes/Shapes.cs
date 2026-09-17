@@ -1,6 +1,5 @@
 namespace IfItQuacks.Sample.AnonymousTypes;
 
-[DuckShape]
 public interface IPerson
 {
     string Name { get; }

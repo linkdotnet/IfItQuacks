@@ -7,10 +7,8 @@ public class AnonymousTypeTests
     private const string Shapes = """
         using IfItQuacks;
 
-        [DuckShape]
         public interface IPerson { string Name { get; } int Age { get; } }
 
-        [DuckShape]
         public interface INamed { string Name { get; } }
         """;
 
@@ -79,7 +77,6 @@ public class AnonymousTypeTests
     {
         var source = Shapes + """
 
-            [DuckShape]
             public interface IOrder { object Customer { get; } long Total { get; } }
 
             public static class Entry
@@ -111,9 +108,9 @@ public class AnonymousTypeTests
 
     [Theory]
     [InlineData("public static class Entry { public static INamed Run() => Duck.As<INamed>(new { Title = \"x\" }); }")]
-    [InlineData("[DuckShape] public interface IWritable { string Name { get; set; } } public static class Entry { public static IWritable Run() => Duck.As<IWritable>(new { Name = \"x\" }); }")]
+    [InlineData("public interface IWritable { string Name { get; set; } } public static class Entry { public static IWritable Run() => Duck.As<IWritable>(new { Name = \"x\" }); }")]
     [InlineData("public static class Entry { public static INamed Run() => Duck.As<INamed>(new { Name = \"x\", Items = new[] { new { A = 1 } } }); }")]
-    [InlineData("public static partial class Ops { [DuckTyped] public static T Get<T>(IBox<T> box) => box.Value; } [DuckShape] public interface IBox<T> { T Value { get; } } public static class Entry { public static int Run() => Ops.Get(new { Value = 1 }); }")]
+    [InlineData("public static partial class Ops { [DuckTyped] public static T Get<T>(IBox<T> box) => box.Value; } public interface IBox<T> { T Value { get; } } public static class Entry { public static int Run() => Ops.Get(new { Value = 1 }); }")]
     public void UnsupportedAnonymousType_ReportsIfItQuacks001(string code)
     {
         Assert.Contains("IFITQUACKS001", GeneratorTestHelper.GetDiagnosticIds(Shapes + "\n" + code));

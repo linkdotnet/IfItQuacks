@@ -10,7 +10,6 @@ public class FieldTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface INameable { string Name { get; set; } }
 
             public class Person { public string Name = "steven"; }
@@ -41,7 +40,6 @@ public class FieldTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface IPoint { int X { get; } object Y { get; } }
 
             public class ClassPoint { public readonly int X = 1; public readonly string Y = "a"; }
@@ -71,7 +69,6 @@ public class FieldTests
         var source = $$"""
             using IfItQuacks;
 
-            [DuckShape]
             public interface INameable { string Name { get; set; } }
 
             public class Person { {{field}} }
@@ -91,7 +88,6 @@ public class FieldTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface IHolder<T> { T Value { get; } }
 
             public class IntHolder { public int Value = 42; }

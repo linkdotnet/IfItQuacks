@@ -11,13 +11,12 @@ using Microsoft.CodeAnalysis.Text;
 namespace IfItQuacks.Generator;
 
 /// <summary>
-/// Generates adapters and interceptors that let <c>[DuckTyped]</c> methods accept any type structurally matching a <c>[DuckShape]</c> interface.
+/// Generates adapters and interceptors that let <c>[DuckTyped]</c> methods accept any type structurally matching their interface parameters.
 /// </summary>
 [Generator(LanguageNames.CSharp)]
 public sealed class IfItQuacksGenerator : IIncrementalGenerator
 {
     private const string DuckTypedAttributeName = "IfItQuacks.DuckTypedAttribute";
-    private const string DuckShapeAttributeName = "IfItQuacks.DuckShapeAttribute";
     private const string DuckTypeName = "IfItQuacks.Duck";
     private const string DuckAsMethodName = "As";
     private const string GeneratedNamespace = "IfItQuacks.Generated";
@@ -104,19 +103,11 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             return false;
         }
 
-        var byReference = duckParameters.FirstOrDefault(p => p.RefKind != RefKind.None);
-        if (byReference is not null)
-        {
-            diagnostics?.Add(Diagnostic.Create(Diagnostics.UnsupportedSignature, location, method.Name,
-                $"its [DuckShape] parameter '{byReference.Name}' is declared '{Utilities.RefKindPrefix(byReference.RefKind).Trim()}'"));
-            return false;
-        }
-
         var unusedTypeParameter = method.TypeParameters.FirstOrDefault(tp => !duckParameters.Any(p => ContainsTypeParameter(p.Type, tp)));
         if (unusedTypeParameter is not null)
         {
             diagnostics?.Add(Diagnostic.Create(Diagnostics.UnsupportedSignature, location, method.Name,
-                $"its type parameter '{unusedTypeParameter.Name}' is not used by a [DuckShape] parameter"));
+                $"its type parameter '{unusedTypeParameter.Name}' is not used by an interface parameter"));
             return false;
         }
 
@@ -156,10 +147,30 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             return null;
 
         var duckArguments = new List<(IParameterSymbol Parameter, ExpressionSyntax Expression, INamedTypeSymbol ConcreteType)>();
+        var passedThrough = new Dictionary<int, (ITypeSymbol ConcreteType, string? AdapterName)>();
         foreach (var parameter in GetDuckParameters(duckMethod))
         {
-            if (!arguments.TryGetValue(parameter.Ordinal, out var expression) ||
-                semanticModel.GetTypeInfo(expression, ct).Type is not INamedTypeSymbol concreteType ||
+            if (!arguments.TryGetValue(parameter.Ordinal, out var expression))
+            {
+                if (duckMethod.IsGenericMethod)
+                    return null;
+                continue;
+            }
+
+            // Omitted arguments, null/default literals and values already typed as the interface bind to a fallback variant keeping that parameter as is.
+            var argumentType = semanticModel.GetTypeInfo(expression, ct).Type;
+            if (!duckMethod.IsGenericMethod && GetDuckParameters(duckMethod).Length <= MaxFallbackVariantParameters &&
+                (argumentType is null || SymbolEqualityComparer.Default.Equals(argumentType, parameter.Type)))
+                continue;
+
+            if (argumentType is IArrayTypeSymbol array && !duckMethod.IsGenericMethod &&
+                compilation.ClassifyCommonConversion(array, parameter.Type) is { IsImplicit: true, IsUserDefined: false })
+            {
+                passedThrough[parameter.Ordinal] = (array, null);
+                continue;
+            }
+
+            if (argumentType is not INamedTypeSymbol concreteType ||
                 concreteType.TypeKind == TypeKind.Error ||
                 (duckMethod.IsGenericMethod && ContainsAnyTypeParameter(concreteType)))
                 return null;
@@ -167,13 +178,18 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             duckArguments.Add((parameter, expression, concreteType));
         }
 
+        if (duckArguments.Count == 0 && passedThrough.Count == 0)
+            return null;
+
         var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
         var targetMethod = duckMethod;
         if (duckMethod.IsGenericMethod)
         {
             foreach (var (parameter, expression, concreteType) in duckArguments)
             {
-                if (FindUnsupportedMemberDiagnostic(expression, (INamedTypeSymbol)parameter.Type) is { } unsupported)
+                var shape = (INamedTypeSymbol)parameter.Type;
+                if (!concreteType.AllInterfaces.Any(i => SymbolEqualityComparer.Default.Equals(i.OriginalDefinition, shape.OriginalDefinition)) &&
+                    FindUnsupportedMemberDiagnostic(expression, shape) is { } unsupported)
                     diagnostics.Add(unsupported);
                 else if (concreteType.IsAnonymousType)
                     diagnostics.Add(Diagnostic.Create(Diagnostics.ShapeMismatch, expression.GetLocation(), concreteType.ToDisplayString(),
@@ -198,10 +214,10 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         }
 
         var adapters = ImmutableArray.CreateBuilder<GeneratedFile>();
-        var resolved = new Dictionary<int, (INamedTypeSymbol ConcreteType, string? AdapterName)>();
+        var resolved = new Dictionary<int, (ITypeSymbol ConcreteType, string? AdapterName)>(passedThrough);
         foreach (var (parameter, expression, concreteType) in duckArguments)
         {
-            var shape = (INamedTypeSymbol)targetMethod.Parameters[parameter.Ordinal].Type;
+            var shape = (INamedTypeSymbol)WithoutNullability(targetMethod.Parameters[parameter.Ordinal].Type);
             if (VerifyArgument(expression, shape, concreteType, compilation, out var implementsDirectly) is { } diagnostic)
             {
                 diagnostics.Add(diagnostic);
@@ -237,7 +253,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         IMethodSymbol duckAsCall, CancellationToken ct)
     {
         var typeArgument = duckAsCall.TypeArguments[0];
-        if (typeArgument is not INamedTypeSymbol { TypeKind: TypeKind.Interface } shape || !IsDuckShape(shape))
+        if (WithoutNullability(typeArgument) is not INamedTypeSymbol { TypeKind: TypeKind.Interface } shape)
         {
             return DiagnosticsOnly([Diagnostic.Create(Diagnostics.ConversionTargetNotShape, invocation.GetLocation(),
                 typeArgument.ToDisplayString())]);
@@ -296,7 +312,11 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
     private static Diagnostic? VerifyArgument(ExpressionSyntax argExpr, INamedTypeSymbol shape, INamedTypeSymbol concreteType,
         Compilation compilation, out bool implementsDirectly)
     {
-        implementsDirectly = false;
+        // Covers explicit implementations and variance (e.g. List<string> as IEnumerable<object>), which structural matching can't see.
+        var conversion = compilation.ClassifyCommonConversion(concreteType, shape);
+        implementsDirectly = conversion.IsImplicit && !conversion.IsUserDefined;
+        if (implementsDirectly)
+            return null;
 
         if (FindUnsupportedMemberDiagnostic(argExpr, shape) is { } unsupported)
             return unsupported;
@@ -310,8 +330,6 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             return Diagnostic.Create(Diagnostics.ShapeMismatch, argExpr.GetLocation(),
                 concreteType.ToDisplayString(), shape.ToDisplayString(), mismatch);
         }
-
-        implementsDirectly = concreteType.AllInterfaces.Any(i => SymbolEqualityComparer.Default.Equals(i, shape));
 
         var unsupportedStructKind = GetUnsupportedStructKind(concreteType, implementsDirectly);
         return unsupportedStructKind is null
@@ -337,14 +355,11 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
 
     private static ImmutableArray<IParameterSymbol> GetDuckParameters(IMethodSymbol method) =>
         method.Parameters
-            .Where(p => p.Type is INamedTypeSymbol { TypeKind: TypeKind.Interface } type && IsDuckShape(type))
+            .Where(p => p is { RefKind: RefKind.None, Type.TypeKind: TypeKind.Interface })
             .ToImmutableArray();
 
     private static bool IsDuckTyped(IMethodSymbol method) =>
         method.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == DuckTypedAttributeName);
-
-    private static bool IsDuckShape(INamedTypeSymbol type) =>
-        type.OriginalDefinition.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == DuckShapeAttributeName);
 
     private static bool IsDuckAs(IMethodSymbol method, Compilation compilation) =>
         method.Name == DuckAsMethodName &&
@@ -450,31 +465,48 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         }
     }
 
+    private const int MaxFallbackVariantParameters = 4;
+
     private static GeneratedFile CreateFallbackOverload(IMethodSymbol method)
     {
         var duckParameters = GetDuckParameters(method);
-        var typeParameterNames = duckParameters.ToDictionary(p => p.Ordinal, FallbackTypeParameterName);
+        // One variant per subset of generic parameters, so null, default and omitted arguments can keep the interface type.
+        var subsets = duckParameters.Length > MaxFallbackVariantParameters
+            ? [duckParameters]
+            : Enumerable.Range(1, (1 << duckParameters.Length) - 1)
+                .Select(mask => duckParameters.Where((_, i) => (mask & (1 << i)) != 0).ToImmutableArray());
 
-        var parameters = string.Join(", ", method.Parameters.Select(p =>
-            Utilities.Parameter(p, typeParameterNames.TryGetValue(p.Ordinal, out var name) ? name : p.Type.ToDisplayString()) + Utilities.DefaultValue(p)));
-        var first = duckParameters[0];
-
-        var methodSource = $$"""
-            {{EditorBrowsableNever}}
-            {{Utilities.AccessibilityKeyword(method.DeclaredAccessibility)}} {{(method.IsStatic ? "static " : "")}}{{method.ReturnType.ToDisplayString()}} {{method.Name}}<{{string.Join(", ", typeParameterNames.Values)}}>({{parameters}})
-            {
-                throw new global::IfItQuacks.DuckShapeMismatchException(typeof({{typeParameterNames[first.Ordinal]}}), typeof({{first.Type.ToDisplayString()}}));
-            }
-            """;
+        var methodSource = string.Join("\n\n", subsets.Select(subset => CreateFallbackVariant(method, subset)));
 
         return new GeneratedFile(
             $"IfItQuacks.Fallback.{SanitizeHintName(method.ContainingType.ToDisplayString())}.{method.Name}.g.cs",
             Header + TypeWrapper.WrapInContainingScope(method.ContainingType, methodSource));
     }
 
+    private static string CreateFallbackVariant(IMethodSymbol method, ImmutableArray<IParameterSymbol> genericParameters)
+    {
+        var typeParameterNames = genericParameters.ToDictionary(p => p.Ordinal, FallbackTypeParameterName);
+
+        var parameters = string.Join(", ", method.Parameters.Select(p => typeParameterNames.TryGetValue(p.Ordinal, out var name)
+            ? Utilities.Parameter(p, name) + GenericDefaultValue(p)
+            : Utilities.Parameter(p, p.Type.ToDisplayString()) + Utilities.DefaultValue(p)));
+        // Calls that couldn't be verified at compile time (e.g. from generic code) still work if the value implements the interface at runtime.
+        var arguments = string.Join(", ", method.Parameters.Select(p => typeParameterNames.TryGetValue(p.Ordinal, out var name)
+            ? RuntimeCast(p, name)
+            : Utilities.Argument(p)));
+
+        return $$"""
+            {{EditorBrowsableNever}}
+            {{Utilities.AccessibilityKeyword(method.DeclaredAccessibility)}} {{(method.IsStatic ? "static " : "")}}{{method.ReturnType.ToDisplayString()}} {{method.Name}}<{{string.Join(", ", typeParameterNames.Values)}}>({{parameters}})
+            {
+                {{(method.ReturnsVoid ? "" : "return ")}}{{method.Name}}({{arguments}});
+            }
+            """;
+    }
+
     // Interceptors must keep the intercepted signature, so a generic fallback can't return the per-call inferred type; concrete overloads can.
     private static OverloadMember CreateDuckOverload(IMethodSymbol method, IMethodSymbol constructed,
-        Dictionary<int, (INamedTypeSymbol ConcreteType, string? AdapterName)> duckArguments)
+        Dictionary<int, (ITypeSymbol ConcreteType, string? AdapterName)> duckArguments)
     {
         var accessibility = method.DeclaredAccessibility is Accessibility.Public or Accessibility.Protected or Accessibility.ProtectedOrInternal &&
                             !duckArguments.Values.All(a => IsPubliclyVisible(a.ConcreteType))
@@ -502,7 +534,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
     }
 
     private static string CreateInterceptor(InterceptableLocation location, IMethodSymbol method,
-        Dictionary<int, (INamedTypeSymbol ConcreteType, string? AdapterName)> duckArguments)
+        Dictionary<int, (ITypeSymbol ConcreteType, string? AdapterName)> duckArguments)
     {
         // Anonymous types can't be named in the signature, so the interceptor stays generic like the fallback it replaces.
         var isGeneric = duckArguments.Values.Any(d => d.ConcreteType.IsAnonymousType);
@@ -525,9 +557,9 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             if (isGeneric)
                 name = duck.ConcreteType.IsAnonymousType ? $"(object){name}!" : $"({duck.ConcreteType.ToDisplayString()})(object){name}!";
             var value = duck.AdapterName is null ? name : $"new global::{GeneratedNamespace}.{duck.AdapterName}({name})";
-            return $"(global::{p.Type.ToDisplayString()})({value})";
+            return $"(global::{WithoutNullability(p.Type).ToDisplayString()})({value})";
         });
-        var typeParameters = isGeneric ? $"<{string.Join(", ", GetDuckParameters(method).Select(FallbackTypeParameterName))}>" : "";
+        var typeParameters = isGeneric ? $"<{string.Join(", ", duckArguments.Keys.OrderBy(o => o).Select(o => FallbackTypeParameterName(method.Parameters[o])))}>" : "";
 
         var receiver = method.IsStatic ? $"global::{method.ContainingType.ToDisplayString()}" : "@this";
         var call = $"{receiver}.{method.Name}({string.Join(", ", arguments)});";
@@ -540,6 +572,19 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         sb.AppendLine("        }");
         return sb.ToString();
     }
+
+    private static string GenericDefaultValue(IParameterSymbol parameter) => parameter.HasExplicitDefaultValue ? " = default!" : "";
+
+    private static string RuntimeCast(IParameterSymbol parameter, string typeParameterName)
+    {
+        var identifier = Utilities.Identifier(parameter.Name);
+        var interfaceName = $"global::{WithoutNullability(parameter.Type).ToDisplayString()}";
+        var allowNull = parameter.Type.NullableAnnotation == NullableAnnotation.Annotated ? $"{identifier} is null ? null : " : "";
+        return $"{identifier} is {interfaceName} __duck{parameter.Ordinal} ? __duck{parameter.Ordinal} : {allowNull}" +
+               $"throw new global::IfItQuacks.DuckTypeMismatchException(typeof({typeParameterName}), typeof({interfaceName}))";
+    }
+
+    private static ITypeSymbol WithoutNullability(ITypeSymbol type) => type.WithNullableAnnotation(NullableAnnotation.NotAnnotated);
 
     private static string FallbackTypeParameterName(IParameterSymbol parameter) => $"TDuck{parameter.Ordinal}";
 

@@ -1,6 +1,5 @@
 namespace IfItQuacks.Sample.Properties;
 
-[DuckShape]
 public interface INameable
 {
     string Name { get; set; }

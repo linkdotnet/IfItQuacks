@@ -6,8 +6,8 @@ internal static class Diagnostics
 {
     public static readonly DiagnosticDescriptor ShapeMismatch = new(
         id: "IFITQUACKS001",
-        title: "Argument does not structurally satisfy duck shape",
-        messageFormat: "Type '{0}' does not structurally satisfy shape '{1}': {2}",
+        title: "Argument does not structurally satisfy interface",
+        messageFormat: "Type '{0}' does not structurally satisfy '{1}': {2}",
         category: "IfItQuacks",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -22,8 +22,8 @@ internal static class Diagnostics
 
     public static readonly DiagnosticDescriptor ParameterNotShape = new(
         id: "IFITQUACKS003",
-        title: "Duck-typed method needs a [DuckShape] parameter",
-        messageFormat: "Method '{0}' is marked [DuckTyped] but none of its parameters is an interface marked [DuckShape]",
+        title: "Duck-typed method needs an interface parameter",
+        messageFormat: "Method '{0}' is marked [DuckTyped] but none of its parameters is an interface passed by value",
         category: "IfItQuacks",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -39,7 +39,7 @@ internal static class Diagnostics
     public static readonly DiagnosticDescriptor UnsupportedShapeMember = new(
         id: "IFITQUACKS005",
         title: "Unsupported shape member",
-        messageFormat: "Shape '{0}' member '{1}' is not supported: generic methods, ref returns and static abstract members can't be adapted",
+        messageFormat: "Interface '{0}' member '{1}' is not supported: generic methods, ref returns and static abstract members can't be adapted",
         category: "IfItQuacks",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -47,15 +47,15 @@ internal static class Diagnostics
     public static readonly DiagnosticDescriptor UnsupportedStructArgument = new(
         id: "IFITQUACKS006",
         title: "Unsupported struct argument",
-        messageFormat: "Type '{0}' cannot be duck-typed to shape '{1}': {2}",
+        messageFormat: "Type '{0}' cannot be duck-typed to '{1}': {2}",
         category: "IfItQuacks",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor ConversionTargetNotShape = new(
         id: "IFITQUACKS007",
-        title: "Duck.As type argument must be a [DuckShape] interface",
-        messageFormat: "'Duck.As<{0}>' requires an interface marked [DuckShape]",
+        title: "Duck.As type argument must be an interface",
+        messageFormat: "'Duck.As<{0}>' requires an interface",
         category: "IfItQuacks",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);

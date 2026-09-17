@@ -1,12 +1,10 @@
 namespace IfItQuacks.Sample.Methods;
 
-[DuckShape]
 public interface IDoable
 {
     void Do();
 }
 
-[DuckShape]
 public interface INamed
 {
     string Name { get; }
@@ -32,10 +30,29 @@ public class Mallard
     public string Name => "Donald";
 }
 
+public interface ILog
+{
+    void Write(string message);
+}
+
+public class ConsoleLog : ILog
+{
+    public void Write(string message) => Console.WriteLine($"[log] {message}");
+}
+
+public class PrefixLog
+{
+    public void Write(string message) => Console.WriteLine($"[prefix] {message}");
+}
+
 public static partial class Ops
 {
     [DuckTyped]
-    public static void Foo(IDoable a) => a.Do();
+    public static void Foo(IDoable a, ILog? log = null)
+    {
+        log?.Write("Doing it");
+        a.Do();
+    }
 }
 
 public partial class Greeter

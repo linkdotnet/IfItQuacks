@@ -7,33 +7,25 @@ internal static class EmbeddedSources
         #nullable enable
         namespace IfItQuacks
         {
-            /// <summary>Marks an interface as a structural "shape" contract that other,
-            /// unrelated types may satisfy without declaring or implementing it.</summary>
-            [System.AttributeUsage(System.AttributeTargets.Interface)]
-            internal sealed class DuckShapeAttribute : System.Attribute
-            {
-            }
-
-            /// <summary>Marks a method whose duck-typed parameter(s) accept any type that
-            /// structurally matches the parameter's <see cref="DuckShapeAttribute"/> interface,
-            /// resolved and dispatched at compile time via generated interceptors.</summary>
+            /// <summary>Marks a method whose interface parameters accept any type that structurally
+            /// matches the interface, verified at compile time and dispatched via generated interceptors.</summary>
             [System.AttributeUsage(System.AttributeTargets.Method)]
             internal sealed class DuckTypedAttribute : System.Attribute
             {
             }
 
-            /// <summary>Converts values to <see cref="DuckShapeAttribute"/> interfaces they structurally satisfy.</summary>
+            /// <summary>Converts values to interfaces they structurally satisfy.</summary>
             internal static class Duck
             {
                 /// <summary>Returns <paramref name="value"/> as <typeparamref name="TShape"/>. The call is verified at compile time and
-                /// replaced by a generated adapter, or by a plain cast if the value already implements the shape.</summary>
+                /// replaced by a generated adapter, or by a plain cast if the value already implements the interface.</summary>
                 public static TShape As<TShape>(object value) where TShape : class
                 {
-                    throw new DuckShapeMismatchException(value?.GetType() ?? typeof(object), typeof(TShape));
+                    return value as TShape ?? throw new DuckTypeMismatchException(value?.GetType() ?? typeof(object), typeof(TShape));
                 }
 
                 /// <summary>Returns the original instance behind a generated adapter, or <paramref name="value"/> itself
-                /// if it is not an adapter (e.g. because its type already implements the shape).</summary>
+                /// if it is not an adapter (e.g. because its type already implements the interface).</summary>
                 public static object? Unwrap(object? value) => value is IDuckAdapter adapter ? adapter.Value : value;
             }
 
@@ -44,13 +36,12 @@ internal static class EmbeddedSources
                 object? Value { get; }
             }
 
-            /// <summary>Thrown when a duck-typed call reaches the non-intercepted fallback path,
-            /// which normally only happens if the argument's shape could not be verified at
-            /// compile time (verified mismatches are reported as build errors instead).</summary>
-            internal sealed class DuckShapeMismatchException : System.Exception
+            /// <summary>Thrown when a call that couldn't be verified at compile time (e.g. from generic code)
+            /// receives a value that doesn't implement the interface at runtime. Verified mismatches are build errors instead.</summary>
+            internal sealed class DuckTypeMismatchException : System.Exception
             {
-                public DuckShapeMismatchException(System.Type actualType, System.Type shapeType)
-                    : base($"Type '{actualType}' does not structurally satisfy shape '{shapeType}'.")
+                public DuckTypeMismatchException(System.Type actualType, System.Type shapeType)
+                    : base($"Type '{actualType}' does not implement '{shapeType}' and could not be duck-typed at compile time.")
                 {
                 }
             }

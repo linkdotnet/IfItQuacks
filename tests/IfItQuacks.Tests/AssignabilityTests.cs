@@ -11,7 +11,6 @@ public class AssignabilityTests
             using IfItQuacks;
             using System.Collections.Generic;
 
-            [DuckShape]
             public interface ISource
             {
                 object Name();
@@ -49,7 +48,6 @@ public class AssignabilityTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface IPrinter { string Print(string text, int number); }
 
             public class Printer { public string Print(object text, long number) => text + ":" + number; }
@@ -76,7 +74,6 @@ public class AssignabilityTests
             using IfItQuacks;
             using System.Collections.Generic;
 
-            [DuckShape]
             public interface IAdder { void Add(int value); }
 
             public static class Entry
@@ -101,7 +98,6 @@ public class AssignabilityTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface IBox
             {
                 object Value { get; }
@@ -143,7 +139,6 @@ public class AssignabilityTests
 
             public class Wrapper { public static implicit operator Wrapper(int value) => new(); }
 
-            [DuckShape]
             {{shape}}
 
             {{type}}
@@ -163,7 +158,6 @@ public class AssignabilityTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface IWriter { string Write(string value); }
 
             public class Writer

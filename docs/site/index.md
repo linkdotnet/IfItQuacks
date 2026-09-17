@@ -18,7 +18,6 @@ dotnet add package IfItQuacks
 ## Example usage
 
 ```csharp
-[DuckShape]
 public interface IDoable
 {
     void Do();
@@ -38,7 +37,7 @@ public static partial class Ops
 Ops.Foo(new A()); // A.Do
 ```
 
-Under the hood the generator writes a small wrapper that implements the shape and replaces your call so it passes that wrapper instead:
+Under the hood the generator writes a small wrapper that implements the interface and replaces your call so it passes that wrapper instead:
 
 ```csharp
 // You write

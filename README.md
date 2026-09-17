@@ -2,6 +2,10 @@
   <img src="assets/logo.png" alt="IfItQuacks logo" width="160" height="160" />
 </p>
 
+<p align="center">
+  <img src="assets/showcase.webp" alt="IfItQuacks: any class and anonymous types satisfy an interface, mismatches fail the build" />
+</p>
+
 # IfItQuacks
 
 [![Nuget](https://img.shields.io/nuget/dt/IfItQuacks?style=flat-square)](https://www.nuget.org/packages/IfItQuacks/)
@@ -13,12 +17,11 @@ Compile-time checked structural (duck) typing for C#: "If it walks like a duck a
 
 > PM> Install-Package IfItQuacks
 
-Declare a shape, mark a method as duck-typed and pass in anything that fits:
+Declare an interface, mark a method as duck-typed and pass in anything that fits - no attributes on the interface or the types:
 
 ```csharp
 using IfItQuacks;
 
-[DuckShape]
 public interface INamed
 {
     string Name { get; }
@@ -62,7 +65,6 @@ IPerson stub = Duck.As<IPerson>(new { Name = "Donald", Age = 90 });
 Members only have to fit, just like an assignment would:
 
 ```csharp
-[DuckShape]
 public interface IInventory
 {
     IEnumerable<string> Items { get; }
@@ -98,7 +100,9 @@ Duck.Unwrap(Duck.As<INamed>(person)) is Person;          // true
 
 ### And more
 
-- Generic shapes (`IContainer<T>`) and generic `[DuckTyped]` methods with inferred type arguments
+- Any interface works, including framework ones: `Duck.As<IDisposable>(x)`, `IEnumerable<T>` parameters, ...
+- Interface parameters that don't need duck typing (an `ILogger`, say) keep accepting implementations, `null` and default values
+- Generic interfaces (`IContainer<T>`) and generic `[DuckTyped]` methods with inferred type arguments
 - Events, indexers and default interface members
 - Instance and static methods, `ref`/`out`, `params`, default values and named arguments
 - Zero setup: install the package, no project file changes

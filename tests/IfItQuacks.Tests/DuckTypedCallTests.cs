@@ -12,7 +12,6 @@ public class DuckTypedCallTests
             using IfItQuacks;
             using System.Text;
 
-            [DuckShape]
             public interface IDoable { void Do(); }
 
             public class A { public void Do() { Sink.Log.Append("A.Do;"); } }
@@ -61,7 +60,6 @@ public class DuckTypedCallTests
             Ops.Foo(new A());
             Ops.Foo(new B());
 
-            [DuckShape]
             public interface IDoable { void Do(); }
 
             public class A { public void Do() { Sink.Log.Append("A.Do;"); } }
@@ -92,7 +90,6 @@ public class DuckTypedCallTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface INameable { string Name { get; set; } }
 
             public class Person { public string Name { get; set; } = ""; }
@@ -131,7 +128,6 @@ public class DuckTypedCallTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface IGreeter { string Greet(string name); }
 
             public readonly struct Greeter { public string Greet(string name) => "Hello, " + name; }
@@ -162,7 +158,6 @@ public class DuckTypedCallTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface IDoable { void Do(); }
 
             public class RealImpl : IDoable { public void Do() { } }

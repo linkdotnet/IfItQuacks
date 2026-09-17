@@ -11,7 +11,6 @@ public class GenericTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface IContainer<T> { T Get(); }
 
             public class IntBox { public int Get() => 42; }
@@ -48,7 +47,6 @@ public class GenericTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface IContainer<T> { T Get(); }
 
             public class IntBox { public int Get() => 42; }
@@ -80,7 +78,6 @@ public class GenericTests
             using IfItQuacks;
             using System.Collections.Generic;
 
-            [DuckShape]
             public interface ILookup<TKey, TValue>
             {
                 TKey Key { get; }
@@ -120,7 +117,6 @@ public class GenericTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface IContainer<T> { T Get(); }
 
             public class RealBox : IContainer<int> { public int Get() => 7; }
@@ -152,7 +148,6 @@ public class GenericTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface IContainer<T> { T Get(); }
 
             public class Rock { }
@@ -179,7 +174,6 @@ public class GenericTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface IDoable { void Do(); }
 
             public static partial class Ops
@@ -199,7 +193,6 @@ public class GenericTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface IContainer<T> { T Get(); }
 
             public struct IntBox { public int Value; public int Get() => Value; }

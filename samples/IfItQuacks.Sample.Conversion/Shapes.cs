@@ -1,12 +1,10 @@
 namespace IfItQuacks.Sample.Conversion;
 
-[DuckShape]
 public interface INamed
 {
     string Name { get; }
 }
 
-[DuckShape]
 public interface ICustomerView
 {
     string Name { get; }

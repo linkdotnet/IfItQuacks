@@ -8,7 +8,6 @@ public class AdapterIdentityTests
         using IfItQuacks;
         using System.Collections.Generic;
 
-        [DuckShape]
         public interface INamed { string Name { get; } }
 
         public class Person { public string Name => "Steven"; public override string ToString() => "Person " + Name; }
@@ -102,7 +101,6 @@ public class AdapterIdentityTests
         const string source = """
             using IfItQuacks;
 
-            [DuckShape]
             public interface IDescribable { string ToString(); int GetHashCode(); }
 
             public class Item { public override string ToString() => "item"; public override int GetHashCode() => 7; }

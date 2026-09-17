@@ -9,10 +9,8 @@ public class DuckTypedSignatureTests
         using IfItQuacks;
         using System.Linq;
 
-        [DuckShape]
         public interface INamed { string Name { get; } }
 
-        [DuckShape]
         public interface IContainer<T> { T Get(); }
 
         public class Person { public string Name => "Steven"; }
@@ -287,7 +285,7 @@ public class DuckTypedSignatureTests
     }
 
     [Fact]
-    public void MethodWithoutShapeParameter_ReportsIfItQuacks003()
+    public void MethodWithoutInterfaceParameter_ReportsIfItQuacks003()
     {
         const string source = Shapes + """
             public static partial class Ops
