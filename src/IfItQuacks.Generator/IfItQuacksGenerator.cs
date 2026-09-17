@@ -85,6 +85,9 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         {
             { IsExtensionMethod: true } => "it is an extension method",
             _ when IsInGenericType(method.ContainingType) => "its containing type is generic",
+            _ when method.ContainingType.TypeKind == TypeKind.Interface => "its containing type is an interface",
+            // A file-local type can't be extended by a partial declaration in the generated file.
+            _ when IsInFileLocalType(method.ContainingType) => "its containing type is file-local",
             _ => null,
         };
         if (unsupportedReason is not null)
@@ -363,12 +366,14 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         method.ContainingType.ToDisplayString() == DuckTypeName &&
         SymbolEqualityComparer.Default.Equals(method.ContainingAssembly, compilation.Assembly);
 
-    private static bool IsInGenericType(INamedTypeSymbol type)
+    private static bool IsInGenericType(INamedTypeSymbol type) => EnclosingTypes(type).Any(t => t.IsGenericType);
+
+    private static bool IsInFileLocalType(INamedTypeSymbol type) => EnclosingTypes(type).Any(t => t.IsFileLocal);
+
+    private static IEnumerable<INamedTypeSymbol> EnclosingTypes(INamedTypeSymbol type)
     {
         for (var t = type; t is not null; t = t.ContainingType)
-            if (t.IsGenericType)
-                return true;
-        return false;
+            yield return t;
     }
 
     // A struct implementing the shape is boxed by the compiler itself, so only adapter-wrapped mutable structs would silently lose mutations.

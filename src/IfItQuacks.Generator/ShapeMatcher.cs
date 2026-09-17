@@ -107,7 +107,7 @@ internal static class ShapeMatcher
             IsPublicInstance(property) &&
             (shapeProperty.RefKind == RefKind.None || IsRefMatch(property.RefKind, property.Type, shapeProperty.RefKind, shapeProperty.Type)) &&
             (shapeProperty.GetMethod is null || property.GetMethod is { DeclaredAccessibility: Accessibility.Public }) &&
-            (shapeProperty.SetMethod is null || property.SetMethod is { DeclaredAccessibility: Accessibility.Public }) &&
+            (shapeProperty.SetMethod is null || IsUsableSetter(property.SetMethod)) &&
             IsValueMatch(property.Type, shapeProperty, compilation) &&
             ParametersMatch(property.Parameters, shapeProperty.Parameters, compilation),
         IFieldSymbol field =>
@@ -141,7 +141,9 @@ internal static class ShapeMatcher
         {
             IPropertySymbol p when shapeProperty.GetMethod is not null && p.GetMethod is not { DeclaredAccessibility: Accessibility.Public } =>
                 $"{displayName} has no public getter",
-            IPropertySymbol p when shapeProperty.SetMethod is not null && p.SetMethod is not { DeclaredAccessibility: Accessibility.Public } =>
+            IPropertySymbol { SetMethod.IsInitOnly: true } when shapeProperty.SetMethod is not null =>
+                $"{displayName} has an init-only setter",
+            IPropertySymbol p when shapeProperty.SetMethod is not null && !IsUsableSetter(p.SetMethod) =>
                 $"{displayName} has no public setter",
             IFieldSymbol { IsReadOnly: true } when shapeProperty.SetMethod is not null =>
                 $"{displayName} is a readonly field",
@@ -151,10 +153,16 @@ internal static class ShapeMatcher
         };
     }
 
+    // An init-only setter can only be called from an object initializer or a constructor, so the adapter can't forward to it.
+    private static bool IsUsableSetter(IMethodSymbol? setter) =>
+        setter is { DeclaredAccessibility: Accessibility.Public, IsInitOnly: false };
+
     // A by-reference result aliases storage, so its type has to match exactly; a writable ref also satisfies a ref readonly member.
     private static bool IsRefMatch(RefKind candidateKind, ITypeSymbol candidateType, RefKind shapeKind, ITypeSymbol shapeType) =>
-        (candidateKind == shapeKind || (shapeKind == RefKind.RefReadOnly && candidateKind == RefKind.Ref)) &&
-        SymbolEqualityComparer.Default.Equals(candidateType, shapeType);
+        IsRefKindCompatible(candidateKind, shapeKind) && SymbolEqualityComparer.Default.Equals(candidateType, shapeType);
+
+    public static bool IsRefKindCompatible(RefKind candidateKind, RefKind shapeKind) =>
+        candidateKind == shapeKind || (shapeKind == RefKind.RefReadOnly && candidateKind == RefKind.Ref);
 
     // Parameters are inputs, so the shape's parameter type has to convert to the candidate's; by-reference parameters stay exact.
     private static bool ParametersMatch(IReadOnlyList<IParameterSymbol> candidate, IReadOnlyList<IParameterSymbol> shape, Compilation compilation)
@@ -178,12 +186,17 @@ internal static class ShapeMatcher
         return conversion.IsImplicit && !conversion.IsUserDefined;
     }
 
-    private static bool IsPublicInstance(ISymbol member) => !member.IsStatic && member.DeclaredAccessibility == Accessibility.Public;
+    public static bool IsPublicInstance(ISymbol member) => !member.IsStatic && member.DeclaredAccessibility == Accessibility.Public;
 
+    // An interface-typed value also exposes the members of its base interfaces, which are not part of its base type chain.
     public static IEnumerable<ISymbol> GetAllMembers(INamedTypeSymbol type)
     {
         for (var current = type; current is not null; current = current.BaseType)
             foreach (var m in current.GetMembers())
+                yield return m;
+
+        if (type.TypeKind == TypeKind.Interface)
+            foreach (var m in type.AllInterfaces.SelectMany(i => i.GetMembers()))
                 yield return m;
     }
 }

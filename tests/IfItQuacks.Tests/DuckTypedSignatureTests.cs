@@ -214,6 +214,35 @@ public class DuckTypedSignatureTests
     }
 
     [Fact]
+    public void InstanceMethodOnStruct_OnReceiversThatAreNotWritableVariables_CopiesDefensively()
+    {
+        const string source = Shapes + """
+            public partial struct Counter
+            {
+                public int Count;
+
+                [DuckTyped]
+                public string Add(INamed named) => named.Name + ++Count;
+            }
+
+            public static class Entry
+            {
+                private static readonly Counter Field = new();
+
+                private static Counter Property => new();
+
+                public static string Run() =>
+                    string.Join("|", Field.Add(new Person()), new Counter().Add(new Pet()), Property.Add(new Person()),
+                        FromIn(Field), Field.Count);
+
+                private static string FromIn(in Counter counter) => counter.Add(new Pet());
+            }
+            """;
+
+        Assert.Equal("Steven1|Duck1|Steven1|Duck1|0", Run(source));
+    }
+
+    [Fact]
     public void PrivateAndProtectedMethods_AreIntercepted()
     {
         const string source = Shapes + """
@@ -342,8 +371,38 @@ public class DuckTypedSignatureTests
         Assert.Equal(2, diagnostics.Count(d => d.Id == "IFITQUACKS001"));
     }
 
+    [Fact]
+    public void MethodsOnRefStruct_AreIntercepted()
+    {
+        const string source = Shapes + """
+            public ref partial struct Cursor
+            {
+                public int Count;
+
+                [DuckTyped]
+                public string Add(INamed named) => named.Name + ++Count;
+
+                [DuckTyped]
+                public static string Format(INamed named) => "<" + named.Name + ">";
+            }
+
+            public static class Entry
+            {
+                public static string Run()
+                {
+                    var cursor = new Cursor();
+                    return cursor.Add(new Person()) + "|" + Cursor.Format(new Pet()) + "|" + cursor.Count;
+                }
+            }
+            """;
+
+        Assert.Equal("Steven1|<Duck>|1", Run(source));
+    }
+
     [Theory]
     [InlineData("public partial class Holder<T> { [DuckTyped] public static string Get(INamed n) => n.Name; }")]
+    [InlineData("public partial interface IHolder { [DuckTyped] public static string Get(INamed n) => n.Name; }")]
+    [InlineData("file partial class Holder { [DuckTyped] public static string Get(INamed n) => n.Name; }")]
     [InlineData("public static partial class Holder { [DuckTyped] public static string Get(this INamed n) => n.Name; }")]
     [InlineData("public static partial class Holder { [DuckTyped] public static T Get<T>(INamed n, T value) => value; }")]
     public void UnsupportedSignature_ReportsIfItQuacks004(string declaration)

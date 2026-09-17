@@ -38,8 +38,8 @@ internal static class Diagnostics
 
     public static readonly DiagnosticDescriptor UnsupportedShapeMember = new(
         id: "IFITQUACKS005",
-        title: "Unsupported shape member",
-        messageFormat: "Interface '{0}' member '{1}' is not supported: generic methods, ref returns and static abstract members can't be adapted",
+        title: "Unsupported interface member",
+        messageFormat: "Interface '{0}' member '{1}' is not supported: generic methods and static abstract members can't be adapted",
         category: "IfItQuacks",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);

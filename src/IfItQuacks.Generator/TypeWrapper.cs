@@ -31,8 +31,10 @@ internal static class TypeWrapper
                 (false, true) => "struct",
                 _ => "class",
             };
-            var staticMod = t.IsStatic ? "static " : "";
-            sb.AppendLine($"{indent}{Utilities.AccessibilityKeyword(t.DeclaredAccessibility)} {staticMod}partial {kind} {t.Name}{TypeParams(t)}");
+            var modifiers = (t.IsStatic ? "static " : "") +
+                            (t.IsReadOnly ? "readonly " : "") +
+                            (t.IsRefLikeType ? "ref " : "");
+            sb.AppendLine($"{indent}{Utilities.AccessibilityKeyword(t.DeclaredAccessibility)} {modifiers}partial {kind} {t.Name}{TypeParams(t)}");
             sb.AppendLine($"{indent}{{");
             indent = new string(' ', indent.Length + 4);
         }

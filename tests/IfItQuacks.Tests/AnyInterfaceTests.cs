@@ -251,4 +251,35 @@ public class AnyInterfaceTests
 
         Assert.Equal("Hi real", GeneratorTestHelper.CompileAndRun(source));
     }
+
+    [Fact]
+    public void ArgumentTypedAsInterface_MatchesInheritedMembers()
+    {
+        const string source = """
+            using IfItQuacks;
+
+            public interface IHasName { string Name { get; } }
+            public interface IPerson : IHasName { int Age { get; } }
+            public interface INamed { string Name { get; } }
+
+            public class Person : IPerson { public string Name => "Steven"; public int Age => 40; }
+
+            public static partial class Ops
+            {
+                [DuckTyped]
+                public static string Describe(INamed named) => named.Name;
+            }
+
+            public static class Entry
+            {
+                public static string Run()
+                {
+                    IPerson person = new Person();
+                    return Ops.Describe(person) + "|" + Duck.As<INamed>(person).Name;
+                }
+            }
+            """;
+
+        Assert.Equal("Steven|Steven", GeneratorTestHelper.CompileAndRun(source));
+    }
 }

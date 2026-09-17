@@ -6,6 +6,15 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 ## [Unreleased]
 
+### Fixed
+
+- `IFITQUACKS005` no longer mentions `ref` returns, which are supported now, and its title matches the documentation.
+- Interface properties and indexers with an `init` setter are adapted correctly. A type whose setter is `init`-only is reported as a mismatch instead of producing invalid code.
+- `[DuckTyped]` methods in an interface or in a `file`-local type are reported with `IFITQUACKS004` instead of silently generating code for a different type. `readonly` and `ref` struct containing types keep their modifiers.
+- Members inherited from base interfaces are found when the argument is statically typed as an interface.
+- A member of the argument's type that hides the inherited member the interface was matched against no longer breaks the generated adapter.
+- Type argument inference skips static and generic candidate members and honours `ref` returns, matching the rules used for structural matching.
+
 ## [v1.1.0] - 2026-09-17
 
 ### Added

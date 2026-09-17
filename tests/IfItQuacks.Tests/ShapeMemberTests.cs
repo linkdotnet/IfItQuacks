@@ -169,6 +169,46 @@ public class ShapeMemberTests
         Assert.Contains("IFITQUACKS001", GeneratorTestHelper.GetDiagnosticIds(source));
     }
 
+    [Fact]
+    public void InitOnlyShapeProperty_IsForwardedToSettableMember()
+    {
+        const string source = """
+            using IfItQuacks;
+
+            public interface IPerson { string Name { get; init; } }
+
+            public class Person { public string Name { get; set; } = "Steven"; }
+
+            public static class Entry
+            {
+                public static string Run() => Duck.As<IPerson>(new Person()).Name;
+            }
+            """;
+
+        Assert.Equal("Steven", Run(source));
+    }
+
+    [Fact]
+    public void ShapeSetter_WithInitOnlyCandidate_ReportsIfItQuacks001()
+    {
+        const string source = """
+            using IfItQuacks;
+
+            public interface IPerson { string Name { get; set; } }
+
+            public class Person { public string Name { get; init; } = ""; }
+
+            public static class Entry
+            {
+                public static IPerson Run() => Duck.As<IPerson>(new Person());
+            }
+            """;
+
+        var (_, diagnostics) = GeneratorTestHelper.RunGenerator(source);
+        var diagnostic = Assert.Single(diagnostics, d => d.Id == "IFITQUACKS001");
+        Assert.Contains("init-only setter", diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("U Map<U>();")]
     [InlineData("static abstract IDoable Create();")]

@@ -43,19 +43,20 @@ internal static class AdapterEmitter
             if (counterpart is null)
                 continue;
 
+            var memberReceiver = Qualify(receiver, concreteType, counterpart);
             switch (member)
             {
                 case IMethodSymbol method:
-                    EmitMethod(sb, method, (IMethodSymbol)counterpart, receiver);
+                    EmitMethod(sb, method, (IMethodSymbol)counterpart, memberReceiver);
                     break;
                 case IPropertySymbol { IsIndexer: true } indexer:
-                    EmitIndexer(sb, indexer, receiver);
+                    EmitIndexer(sb, indexer, memberReceiver);
                     break;
                 case IPropertySymbol property:
-                    EmitProperty(sb, property, receiver);
+                    EmitProperty(sb, property, memberReceiver);
                     break;
                 case IEventSymbol @event:
-                    EmitEvent(sb, @event, receiver);
+                    EmitEvent(sb, @event, memberReceiver);
                     break;
             }
         }
@@ -85,7 +86,7 @@ internal static class AdapterEmitter
     {
         sb.Append($"        {Utilities.RefReturnPrefix(property.RefKind)}{property.Type.ToDisplayString()} {Owner(property)}.{property.Name} {{ ");
         if (property.GetMethod is not null) sb.Append($"get => {RefExpressionPrefix(property.RefKind)}{receiver}.{property.Name}; ");
-        if (property.SetMethod is not null) sb.Append($"set => {receiver}.{property.Name} = value; ");
+        if (property.SetMethod is { } setter) sb.Append($"{SetterKeyword(setter)} => {receiver}.{property.Name} = value; ");
         sb.AppendLine("}");
     }
 
@@ -94,7 +95,7 @@ internal static class AdapterEmitter
         var args = string.Join(", ", indexer.Parameters.Select(Utilities.Argument));
         sb.Append($"        {Utilities.RefReturnPrefix(indexer.RefKind)}{indexer.Type.ToDisplayString()} {Owner(indexer)}.this[{FormatParameters(indexer.Parameters)}] {{ ");
         if (indexer.GetMethod is not null) sb.Append($"get => {RefExpressionPrefix(indexer.RefKind)}{receiver}[{args}]; ");
-        if (indexer.SetMethod is not null) sb.Append($"set => {receiver}[{args}] = value; ");
+        if (indexer.SetMethod is { } setter) sb.Append($"{SetterKeyword(setter)} => {receiver}[{args}] = value; ");
         sb.AppendLine("}");
     }
 
@@ -109,6 +110,23 @@ internal static class AdapterEmitter
         sb.AppendLine($"        public override int GetHashCode() => {(isReference ? "_value?.GetHashCode() ?? 0" : "_value.GetHashCode()")};");
         sb.AppendLine($"        public override string ToString() => {(isReference ? "_value?.ToString()" : "_value.ToString()")} ?? string.Empty;");
     }
+
+    // A member of the concrete type can hide the inherited one the shape was matched against, so the receiver is cast to its declaring type.
+    private static string Qualify(string receiver, INamedTypeSymbol concreteType, ISymbol counterpart)
+    {
+        var declaringType = counterpart.ContainingType;
+        if (SymbolEqualityComparer.Default.Equals(declaringType, concreteType))
+            return receiver;
+
+        var hides = false;
+        for (var t = concreteType; t is not null && !SymbolEqualityComparer.Default.Equals(t, declaringType); t = t.BaseType)
+            hides |= t.GetMembers(counterpart.Name).Any(m => !SymbolEqualityComparer.Default.Equals(m, counterpart));
+
+        return hides ? $"(({declaringType.ToDisplayString()}){receiver})" : receiver;
+    }
+
+    // An interface accessor declared init-only has to be implemented as init-only as well.
+    private static string SetterKeyword(IMethodSymbol setter) => setter.IsInitOnly ? "init" : "set";
 
     private static string RefExpressionPrefix(RefKind kind) => kind == RefKind.None ? "" : "ref ";
 

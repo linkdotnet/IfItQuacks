@@ -34,9 +34,10 @@ internal static class TypeArgumentInference
     {
         foreach (var candidate in ShapeMatcher.GetAllMembers(concreteType).OfType<IMethodSymbol>())
         {
-            if (candidate.MethodKind != MethodKind.Ordinary) continue;
+            if (candidate.MethodKind != MethodKind.Ordinary || candidate.IsGenericMethod) continue;
             if (candidate.Name != shapeMethod.Name) continue;
-            if (candidate.DeclaredAccessibility != Accessibility.Public) continue;
+            if (!ShapeMatcher.IsPublicInstance(candidate)) continue;
+            if (!ShapeMatcher.IsRefKindCompatible(candidate.RefKind, shapeMethod.RefKind)) continue;
             if (candidate.Parameters.Length != shapeMethod.Parameters.Length) continue;
 
             var attempt = new Dictionary<ITypeParameterSymbol, ITypeSymbol>(bindings, SymbolEqualityComparer.Default);
@@ -62,7 +63,7 @@ internal static class TypeArgumentInference
         if (!shapeProperty.IsIndexer)
         {
             var field = ShapeMatcher.GetAllMembers(concreteType).OfType<IFieldSymbol>()
-                .FirstOrDefault(f => f.Name == shapeProperty.Name && !f.IsStatic && f.DeclaredAccessibility == Accessibility.Public);
+                .FirstOrDefault(f => f.Name == shapeProperty.Name && ShapeMatcher.IsPublicInstance(f));
             var attempt = new Dictionary<ITypeParameterSymbol, ITypeSymbol>(bindings, SymbolEqualityComparer.Default);
             if (field is not null && Unify(method, shapeProperty.Type, field.Type, attempt))
             {
@@ -74,7 +75,8 @@ internal static class TypeArgumentInference
         foreach (var candidate in ShapeMatcher.GetAllMembers(concreteType).OfType<IPropertySymbol>())
         {
             if (candidate.Name != shapeProperty.Name) continue;
-            if (candidate.DeclaredAccessibility != Accessibility.Public) continue;
+            if (!ShapeMatcher.IsPublicInstance(candidate)) continue;
+            if (!ShapeMatcher.IsRefKindCompatible(candidate.RefKind, shapeProperty.RefKind)) continue;
             if (candidate.Parameters.Length != shapeProperty.Parameters.Length) continue;
 
             var attempt = new Dictionary<ITypeParameterSymbol, ITypeSymbol>(bindings, SymbolEqualityComparer.Default);
@@ -95,7 +97,7 @@ internal static class TypeArgumentInference
         Dictionary<ITypeParameterSymbol, ITypeSymbol> bindings)
     {
         var candidate = ShapeMatcher.GetAllMembers(concreteType).OfType<IEventSymbol>()
-            .FirstOrDefault(e => e.Name == shapeEvent.Name && e.DeclaredAccessibility == Accessibility.Public);
+            .FirstOrDefault(e => e.Name == shapeEvent.Name && ShapeMatcher.IsPublicInstance(e));
         if (candidate is null) return false;
 
         var attempt = new Dictionary<ITypeParameterSymbol, ITypeSymbol>(bindings, SymbolEqualityComparer.Default);

@@ -212,4 +212,35 @@ public class GenericTests
         var (_, diagnostics) = GeneratorTestHelper.RunGenerator(source);
         Assert.Contains(diagnostics, d => d.Id == "IFITQUACKS006");
     }
+
+    [Fact]
+    public void Inference_SkipsStaticAndGenericCandidateMembers()
+    {
+        const string source = """
+            using IfItQuacks;
+
+            public interface IContainer<T> { T Get(); }
+
+            public class BoxBase { public int Get() => 42; }
+            public class HidingBox : BoxBase { public static new string Get() => "static"; }
+            public class GenericBox { public T Get<T>() => default!; public int Get() => 7; }
+
+            public static partial class Ops
+            {
+                [DuckTyped]
+                public static T Foo<T>(IContainer<T> c) => c.Get();
+            }
+
+            public static class Entry
+            {
+                public static int Run() => Ops.Foo(new HidingBox()) + Ops.Foo(new GenericBox());
+            }
+            """;
+
+        var (compilation, diagnostics) = GeneratorTestHelper.RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var assembly = GeneratorTestHelper.EmitAndLoad(compilation);
+        Assert.Equal(49, assembly.GetType("Entry")!.GetMethod("Run")!.Invoke(null, null));
+    }
 }
