@@ -112,9 +112,65 @@ public class ShapeMemberTests
         Assert.Equal("Hello, Plain|Quack, Custom", Run(source));
     }
 
+    [Fact]
+    public void RefReturningMembers_AliasTheOriginalStorage()
+    {
+        const string source = """
+            using IfItQuacks;
+
+            public interface ISlots
+            {
+                ref int First();
+                ref readonly int Last { get; }
+                ref int this[int index] { get; }
+            }
+
+            public class Slots
+            {
+                private readonly int[] _values = [1, 2, 3];
+                public ref int First() => ref _values[0];
+                public ref int Last => ref _values[2];
+                public ref int this[int index] => ref _values[index];
+                public int Sum => _values[0] + _values[1] + _values[2];
+            }
+
+            public static class Entry
+            {
+                public static string Run()
+                {
+                    var slots = new Slots();
+                    var view = Duck.As<ISlots>(slots);
+                    view.First() = 10;
+                    view[1] = 20;
+                    return view.Last + "|" + slots.Sum;
+                }
+            }
+            """;
+
+        Assert.Equal("3|33", Run(source));
+    }
+
+    [Fact]
+    public void RefReturningShapeMember_WithByValueCandidate_ReportsIfItQuacks001()
+    {
+        const string source = """
+            using IfItQuacks;
+
+            public interface ISlot { ref int Get(); }
+
+            public class Slot { public int Get() => 1; }
+
+            public static class Entry
+            {
+                public static ISlot Run() => Duck.As<ISlot>(new Slot());
+            }
+            """;
+
+        Assert.Contains("IFITQUACKS001", GeneratorTestHelper.GetDiagnosticIds(source));
+    }
+
     [Theory]
     [InlineData("U Map<U>();")]
-    [InlineData("ref int Get();")]
     [InlineData("static abstract IDoable Create();")]
     public void UnsupportedShapeMember_ReportsIfItQuacks005(string member)
     {

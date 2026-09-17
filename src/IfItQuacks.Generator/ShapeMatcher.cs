@@ -52,8 +52,7 @@ internal static class ShapeMatcher
     private static bool IsUnsupported(ISymbol member) => member switch
     {
         { IsStatic: true, IsAbstract: true } => true,
-        IMethodSymbol { MethodKind: MethodKind.Ordinary, IsStatic: false } method => method.IsGenericMethod || method.RefKind != RefKind.None,
-        IPropertySymbol { IsStatic: false } property => property.RefKind != RefKind.None,
+        IMethodSymbol { MethodKind: MethodKind.Ordinary, IsStatic: false } method => method.IsGenericMethod,
         _ => false,
     };
 
@@ -80,6 +79,14 @@ internal static class ShapeMatcher
             if (candidate.Name != shapeMethod.Name || !IsPublicInstance(candidate)) continue;
             if (candidate.Parameters.Length != shapeMethod.Parameters.Length) continue;
 
+            if (shapeMethod.RefKind != RefKind.None)
+            {
+                if (IsRefMatch(candidate.RefKind, candidate.ReturnType, shapeMethod.RefKind, shapeMethod.ReturnType) &&
+                    ParametersMatch(candidate.Parameters, shapeMethod.Parameters, compilation))
+                    return candidate;
+                continue;
+            }
+
             if (SymbolEqualityComparer.Default.Equals(candidate.ReturnType, shapeMethod.ReturnType) &&
                 candidate.Parameters.Zip(shapeMethod.Parameters, (c, s) => c.RefKind == s.RefKind && SymbolEqualityComparer.Default.Equals(c.Type, s.Type)).All(m => m))
                 return candidate;
@@ -98,12 +105,13 @@ internal static class ShapeMatcher
         IPropertySymbol property =>
             property.Name == shapeProperty.Name &&
             IsPublicInstance(property) &&
+            (shapeProperty.RefKind == RefKind.None || IsRefMatch(property.RefKind, property.Type, shapeProperty.RefKind, shapeProperty.Type)) &&
             (shapeProperty.GetMethod is null || property.GetMethod is { DeclaredAccessibility: Accessibility.Public }) &&
             (shapeProperty.SetMethod is null || property.SetMethod is { DeclaredAccessibility: Accessibility.Public }) &&
             IsValueMatch(property.Type, shapeProperty, compilation) &&
             ParametersMatch(property.Parameters, shapeProperty.Parameters, compilation),
         IFieldSymbol field =>
-            !shapeProperty.IsIndexer &&
+            shapeProperty is { IsIndexer: false, RefKind: RefKind.None } &&
             field.Name == shapeProperty.Name &&
             IsPublicInstance(field) &&
             (shapeProperty.SetMethod is null || !field.IsReadOnly) &&
@@ -142,6 +150,11 @@ internal static class ShapeMatcher
             _ => $"missing {displayName} of type '{shapeProperty.Type.ToDisplayString()}'",
         };
     }
+
+    // A by-reference result aliases storage, so its type has to match exactly; a writable ref also satisfies a ref readonly member.
+    private static bool IsRefMatch(RefKind candidateKind, ITypeSymbol candidateType, RefKind shapeKind, ITypeSymbol shapeType) =>
+        (candidateKind == shapeKind || (shapeKind == RefKind.RefReadOnly && candidateKind == RefKind.Ref)) &&
+        SymbolEqualityComparer.Default.Equals(candidateType, shapeType);
 
     // Parameters are inputs, so the shape's parameter type has to convert to the candidate's; by-reference parameters stay exact.
     private static bool ParametersMatch(IReadOnlyList<IParameterSymbol> candidate, IReadOnlyList<IParameterSymbol> shape, Compilation compilation)

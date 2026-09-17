@@ -84,9 +84,6 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         var unsupportedReason = method switch
         {
             { IsExtensionMethod: true } => "it is an extension method",
-            { IsStatic: false, ContainingType.IsValueType: true } => "it is an instance method of a struct",
-            { DeclaredAccessibility: Accessibility.Private or Accessibility.Protected or Accessibility.ProtectedAndInternal } =>
-                "it is not accessible from the generated interceptors (use public or internal)",
             _ when IsInGenericType(method.ContainingType) => "its containing type is generic",
             _ => null,
         };
@@ -477,6 +474,8 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
                 .Select(mask => duckParameters.Where((_, i) => (mask & (1 << i)) != 0).ToImmutableArray());
 
         var methodSource = string.Join("\n\n", subsets.Select(subset => CreateFallbackVariant(method, subset)));
+        if (NeedsForwarder(method))
+            methodSource += "\n\n" + CreateForwarder(method);
 
         return new GeneratedFile(
             $"IfItQuacks.Fallback.{SanitizeHintName(method.ContainingType.ToDisplayString())}.{method.Name}.g.cs",
@@ -502,6 +501,21 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
                 {{(method.ReturnsVoid ? "" : "return ")}}{{method.Name}}({{arguments}});
             }
             """;
+    }
+
+    // Interceptors live in their own namespace, so methods they can't access are called through an internal forwarder on the containing type.
+    private static bool NeedsForwarder(IMethodSymbol method) =>
+        method.DeclaredAccessibility is Accessibility.Private or Accessibility.Protected or Accessibility.ProtectedAndInternal;
+
+    private static string ForwarderName(IMethodSymbol method) => $"__IfItQuacks_{method.Name}";
+
+    private static string CreateForwarder(IMethodSymbol method)
+    {
+        var parameters = string.Join(", ", method.Parameters.Select(p => Utilities.Parameter(p, p.Type.ToDisplayString())));
+        var arguments = string.Join(", ", method.Parameters.Select(Utilities.Argument));
+        var modifiers = (method.IsStatic ? "static " : "") + (method.IsReadOnly ? "readonly " : "");
+        return $"{EditorBrowsableNever}\n" +
+               $"internal {modifiers}{method.ReturnType.ToDisplayString()} {ForwarderName(method)}({parameters}) => {method.Name}({arguments});";
     }
 
     // Interceptors must keep the intercepted signature, so a generic fallback can't return the per-call inferred type; concrete overloads can.
@@ -545,7 +559,11 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             return Utilities.Parameter(p, isGeneric ? FallbackTypeParameterName(p) : duck.ConcreteType.ToDisplayString());
         });
         if (!method.IsStatic)
-            parameters = parameters.Prepend($"this global::{method.ContainingType.ToDisplayString()} @this");
+        {
+            // Struct receivers are passed by reference, so mutations made by the method reach the caller's value.
+            var receiverRefKind = method.IsReadOnly ? "in " : "ref ";
+            parameters = parameters.Prepend($"this {(method.ContainingType.IsValueType ? receiverRefKind : "")}global::{method.ContainingType.ToDisplayString()} @this");
+        }
 
         // Casting to the shape interface makes overload resolution pick the real method instead of the generated generic fallback.
         var arguments = method.Parameters.Select(p =>
@@ -562,7 +580,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         var typeParameters = isGeneric ? $"<{string.Join(", ", duckArguments.Keys.OrderBy(o => o).Select(o => FallbackTypeParameterName(method.Parameters[o])))}>" : "";
 
         var receiver = method.IsStatic ? $"global::{method.ContainingType.ToDisplayString()}" : "@this";
-        var call = $"{receiver}.{method.Name}({string.Join(", ", arguments)});";
+        var call = $"{receiver}.{(NeedsForwarder(method) ? ForwarderName(method) : method.Name)}({string.Join(", ", arguments)});";
 
         var sb = new StringBuilder();
         sb.AppendLine("        " + location.GetInterceptsLocationAttributeSyntax());

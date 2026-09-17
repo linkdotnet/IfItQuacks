@@ -78,13 +78,13 @@ internal static class AdapterEmitter
             SymbolEqualityComparer.Default.Equals(p.Type, counterpart.Parameters[i].Type)
                 ? Utilities.Argument(p)
                 : $"({counterpart.Parameters[i].Type.ToDisplayString()}){Utilities.Identifier(p.Name)}"));
-        sb.AppendLine($"        {method.ReturnType.ToDisplayString()} {Owner(method)}.{method.Name}({parameters}) => {receiver}.{method.Name}({args});");
+        sb.AppendLine($"        {Utilities.RefReturnPrefix(method.RefKind)}{method.ReturnType.ToDisplayString()} {Owner(method)}.{method.Name}({parameters}) => {RefExpressionPrefix(method.RefKind)}{receiver}.{method.Name}({args});");
     }
 
     private static void EmitProperty(StringBuilder sb, IPropertySymbol property, string receiver)
     {
-        sb.Append($"        {property.Type.ToDisplayString()} {Owner(property)}.{property.Name} {{ ");
-        if (property.GetMethod is not null) sb.Append($"get => {receiver}.{property.Name}; ");
+        sb.Append($"        {Utilities.RefReturnPrefix(property.RefKind)}{property.Type.ToDisplayString()} {Owner(property)}.{property.Name} {{ ");
+        if (property.GetMethod is not null) sb.Append($"get => {RefExpressionPrefix(property.RefKind)}{receiver}.{property.Name}; ");
         if (property.SetMethod is not null) sb.Append($"set => {receiver}.{property.Name} = value; ");
         sb.AppendLine("}");
     }
@@ -92,8 +92,8 @@ internal static class AdapterEmitter
     private static void EmitIndexer(StringBuilder sb, IPropertySymbol indexer, string receiver)
     {
         var args = string.Join(", ", indexer.Parameters.Select(Utilities.Argument));
-        sb.Append($"        {indexer.Type.ToDisplayString()} {Owner(indexer)}.this[{FormatParameters(indexer.Parameters)}] {{ ");
-        if (indexer.GetMethod is not null) sb.Append($"get => {receiver}[{args}]; ");
+        sb.Append($"        {Utilities.RefReturnPrefix(indexer.RefKind)}{indexer.Type.ToDisplayString()} {Owner(indexer)}.this[{FormatParameters(indexer.Parameters)}] {{ ");
+        if (indexer.GetMethod is not null) sb.Append($"get => {RefExpressionPrefix(indexer.RefKind)}{receiver}[{args}]; ");
         if (indexer.SetMethod is not null) sb.Append($"set => {receiver}[{args}] = value; ");
         sb.AppendLine("}");
     }
@@ -109,6 +109,8 @@ internal static class AdapterEmitter
         sb.AppendLine($"        public override int GetHashCode() => {(isReference ? "_value?.GetHashCode() ?? 0" : "_value.GetHashCode()")};");
         sb.AppendLine($"        public override string ToString() => {(isReference ? "_value?.ToString()" : "_value.ToString()")} ?? string.Empty;");
     }
+
+    private static string RefExpressionPrefix(RefKind kind) => kind == RefKind.None ? "" : "ref ";
 
     private static string Owner(ISymbol member) => member.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 

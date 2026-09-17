@@ -4,9 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       versionIncrement:
-        description: 'The new version. For example: 1.1.0 or 1.1.0-preview.1'
+        description: 'Which part of the version to increment'
+        type: choice
         required: true
-        default: ''
+        default: minor
+        options:
+        - patch
+        - minor
+        - major
       prerelease:
         description: 'Is this a pre-release?'
         type: boolean
@@ -34,6 +39,24 @@ jobs:
         persist-credentials: true
         fetch-depth: 0
 
+    - name: Calculate version
+      id: version
+      run: |
+        LATEST=$(git tag --list 'v*' --sort=-v:refname | grep -v -e '-' | head -n 1)
+        IFS=. read -r MAJOR MINOR PATCH <<< "${LATEST#v}"
+        MAJOR=${MAJOR:-0}; MINOR=${MINOR:-0}; PATCH=${PATCH:-0}
+        case "${{ github.event.inputs.versionIncrement }}" in
+          major) VERSION="$((MAJOR + 1)).0.0" ;;
+          minor) VERSION="$MAJOR.$((MINOR + 1)).0" ;;
+          patch) VERSION="$MAJOR.$MINOR.$((PATCH + 1))" ;;
+        esac
+        # Prereleases are not tagged, so the run number keeps their versions unique.
+        if [ "${{ github.event.inputs.prerelease }}" = "true" ]; then
+          VERSION="$VERSION-preview.${{ github.run_number }}"
+        fi
+        echo "Releasing $VERSION (previous: ${LATEST:-none})"
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
     - name: Get changelog entries
       id: changelog
       uses: mindsers/changelog-reader-action@v2
@@ -53,7 +76,7 @@ jobs:
       if: github.event.inputs.prerelease == 'false'
       uses: thomaseizinger/keep-a-changelog-new-release@3.1.0
       with:
-        version: v${{ github.event.inputs.versionIncrement }}
+        version: v${{ steps.version.outputs.version }}
 
     - name: Ship analyzer releases
       if: github.event.inputs.prerelease == 'false'
@@ -62,7 +85,7 @@ jobs:
         SHIPPED=src/IfItQuacks.Generator/AnalyzerReleases.Shipped.md
         BODY=$(grep -v '^;' "$UNSHIPPED" | sed '/./,$!d')
         if [ -n "$BODY" ]; then
-          printf '\n## Release %s\n\n%s\n' "${{ github.event.inputs.versionIncrement }}" "$BODY" >> "$SHIPPED"
+          printf '\n## Release %s\n\n%s\n' "${{ steps.version.outputs.version }}" "$BODY" >> "$SHIPPED"
           grep '^;' "$UNSHIPPED" > "$UNSHIPPED.tmp" && mv "$UNSHIPPED.tmp" "$UNSHIPPED"
         fi
 
@@ -76,7 +99,7 @@ jobs:
       if: github.event.inputs.prerelease == 'false'
       run: |
         git add CHANGELOG.md src/IfItQuacks.Generator/AnalyzerReleases.*.md
-        git commit -m "Update Changelog.md and analyzer releases for ${{ github.event.inputs.versionIncrement }} release"
+        git commit -m "Update Changelog.md and analyzer releases for ${{ steps.version.outputs.version }} release"
         git push origin main
         echo "RELEASE_COMMIT_HASH=$(git rev-parse HEAD)" >> $GITHUB_ENV
 
@@ -86,15 +109,15 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: v${{ github.event.inputs.versionIncrement }}
+        tag_name: v${{ steps.version.outputs.version }}
         target_commitish: ${{ env.RELEASE_COMMIT_HASH }}
-        name: v${{ github.event.inputs.versionIncrement }}
+        name: v${{ steps.version.outputs.version }}
         body: ${{ steps.changelog.outputs.changes }}
         draft: false
 
     - name: Create release package
       run: |
-        dotnet pack -c Release src/IfItQuacks.Generator/IfItQuacks.Generator.csproj -p:PackageVersion=${{ github.event.inputs.versionIncrement }} --property:PackageOutputPath=${GITHUB_WORKSPACE}/packages /p:ContinuousIntegrationBuild=true
+        dotnet pack -c Release src/IfItQuacks.Generator/IfItQuacks.Generator.csproj -p:PackageVersion=${{ steps.version.outputs.version }} --property:PackageOutputPath=${GITHUB_WORKSPACE}/packages /p:ContinuousIntegrationBuild=true
 
     - name: NuGet login
       uses: NuGet/login@v1

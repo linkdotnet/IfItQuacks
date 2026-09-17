@@ -6,6 +6,12 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 ## [Unreleased]
 
+### Added
+
+- `[DuckTyped]` instance methods on structs. The receiver is passed by reference, so mutations reach the caller's value.
+- `private`, `protected` and `private protected` `[DuckTyped]` methods.
+- Interface members returning by `ref` or `ref readonly` (methods, properties and indexers) can be adapted if the matching member returns the same type by reference.
+
 ## [v1.0.0] - 2026-09-17
 
 ### Added

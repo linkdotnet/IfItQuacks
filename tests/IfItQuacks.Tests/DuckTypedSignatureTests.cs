@@ -179,6 +179,79 @@ public class DuckTypedSignatureTests
     }
 
     [Fact]
+    public void InstanceMethodOnMutableStruct_MutatesCallersValue()
+    {
+        const string source = Shapes + """
+            public partial struct Counter
+            {
+                public int Count;
+
+                [DuckTyped]
+                public string Add(INamed named) => named.Name + ++Count;
+            }
+
+            public readonly partial record struct Prefix(string Value)
+            {
+                [DuckTyped]
+                public string Apply(INamed named) => Value + named.Name;
+            }
+
+            public static class Entry
+            {
+                private static readonly Prefix Hi = new("Hi ");
+
+                public static string Run()
+                {
+                    var counter = new Counter();
+                    var first = counter.Add(new Person());
+                    var second = counter.Add(new Pet());
+                    return first + "|" + second + "|" + counter.Count + "|" + Hi.Apply(new Person());
+                }
+            }
+            """;
+
+        Assert.Equal("Steven1|Duck2|2|Hi Steven", Run(source));
+    }
+
+    [Fact]
+    public void PrivateAndProtectedMethods_AreIntercepted()
+    {
+        const string source = Shapes + """
+            public partial class Base
+            {
+                [DuckTyped]
+                protected string Describe(INamed named) => "base:" + named.Name;
+
+                [DuckTyped]
+                private protected static string Tag(INamed named) => "#" + named.Name;
+            }
+
+            public partial class Derived : Base
+            {
+                public string Run() => Describe(new Person()) + Tag(new Pet());
+            }
+
+            public static partial class Ops
+            {
+                [DuckTyped]
+                private static string Shout(INamed named) => named.Name.ToUpperInvariant();
+
+                [DuckTyped]
+                private static T First<T>(IContainer<T> container) => container.Get();
+
+                public static string Run() => Shout(new Pet()) + First(new IntBox(7));
+            }
+
+            public static class Entry
+            {
+                public static string Run() => new Derived().Run() + "|" + Ops.Run();
+            }
+            """;
+
+        Assert.Equal("base:Steven#Duck|DUCK7", Run(source));
+    }
+
+    [Fact]
     public void GenericInstanceMethod_InfersTypeArgumentUsedByRegularParameter()
     {
         const string source = Shapes + """
@@ -270,12 +343,9 @@ public class DuckTypedSignatureTests
     }
 
     [Theory]
-    [InlineData("public partial struct Holder { [DuckTyped] public string Get(INamed n) => n.Name; }")]
     [InlineData("public partial class Holder<T> { [DuckTyped] public static string Get(INamed n) => n.Name; }")]
     [InlineData("public static partial class Holder { [DuckTyped] public static string Get(this INamed n) => n.Name; }")]
     [InlineData("public static partial class Holder { [DuckTyped] public static T Get<T>(INamed n, T value) => value; }")]
-    [InlineData("public static partial class Holder { [DuckTyped] private static string Get(INamed n) => n.Name; }")]
-    [InlineData("public partial class Holder { [DuckTyped] protected string Get(INamed n) => n.Name; }")]
     public void UnsupportedSignature_ReportsIfItQuacks004(string declaration)
     {
         var source = Shapes + declaration;

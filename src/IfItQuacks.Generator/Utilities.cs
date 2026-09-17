@@ -25,6 +25,13 @@ internal static class Utilities
         _ => "",
     };
 
+    public static string RefReturnPrefix(RefKind kind) => kind switch
+    {
+        RefKind.Ref => "ref ",
+        RefKind.RefReadOnly => "ref readonly ",
+        _ => "",
+    };
+
     public static string RefKindArgumentPrefix(RefKind kind) => kind switch
     {
         RefKind.Ref => "ref ",

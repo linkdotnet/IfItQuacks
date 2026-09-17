@@ -60,7 +60,7 @@ public class Warehouse
 }
 ```
 
-Types that already implement the interface - directly, explicitly or through variance - are passed through without an adapter. For all others, generic methods (`U Map<U>()`), `ref` returns and `static abstract` members can't be adapted and are reported with [`IFITQUACKS005`](diagnostics.md#ifitquacks005).
+Types that already implement the interface - directly, explicitly or through variance - are passed through without an adapter. For all others, generic methods (`U Map<U>()`) and `static abstract` members can't be adapted and are reported with [`IFITQUACKS005`](diagnostics.md#ifitquacks005).
 
 ```csharp
 public interface INameable

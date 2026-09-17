@@ -36,8 +36,7 @@ None of the parameters of a `[DuckTyped]` method is an interface passed by value
 
 Reported when
 
-- the method is an extension method, or an instance method of a struct,
-- the method is `private` or `protected`, so the generated interceptors can't call it,
+- the method is an extension method,
 - the containing type (or one of its enclosing types) is generic,
 - the method is overloaded by another `[DuckTyped]` method of the same name in the same type, or
 - a type parameter of a generic method is not used by any interface parameter (it can't be inferred).
@@ -46,7 +45,7 @@ Reported when
 
 **Unsupported interface member**
 
-The interface contains a member an adapter can't implement: a generic method (`U Map<U>()`), a member returning by `ref`, or a `static abstract` member. It is reported on every argument that would need an adapter; types implementing the interface are fine.
+The interface contains a member an adapter can't implement: a generic method (`U Map<U>()`) or a `static abstract` member. It is reported on every argument that would need an adapter; types implementing the interface are fine.
 
 ```csharp
 public interface IMapper { U Map<U>(); }
