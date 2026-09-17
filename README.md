@@ -1,8 +1,4 @@
 <p align="center">
-  <img src="assets/logo.png" alt="IfItQuacks logo" width="160" height="160" />
-</p>
-
-<p align="center">
   <img src="assets/showcase.webp" alt="IfItQuacks: any class and anonymous types satisfy an interface, mismatches fail the build" />
 </p>
 
