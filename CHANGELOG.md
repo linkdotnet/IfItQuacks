@@ -6,19 +6,25 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 ## [Unreleased]
 
+## [v1.2.0] - 2026-09-17
+
 ### Added
 
 - Delegates, lambdas and method groups satisfy an interface with a single method (a functional interface), both as `[DuckTyped]` arguments and through `Duck.As`.
+
 - A `[DuckTyped]` method converts to a delegate over the duck type (`Func<Person, string> f = Ops.Describe;`, `items.Select(Ops.Describe)`) through a generated overload.
+
 - `static abstract` members and operators via duck-typed constraints (`where T : IAddable<T>`), including BCL generic math interfaces such as `IAdditionOperators<T, T, T>`. The generated adapter is its own type argument, so these calls don't box.
+
 - Samples: `IfItQuacks.Sample.Delegates` and `IfItQuacks.Sample.GenericMath`.
 
 - Documentation: a [Benchmarks](docs/site/articles/benchmarks.md) page with measured numbers (BenchmarkDotNet, `MemoryDiagnoser`) for duck-typed calls and for `Duck.As` used as a view instead of a mapper.
+
 - Samples: `IfItQuacks.Sample.Members` (events, indexers, `ref` returns, default interface members) and `IfItQuacks.Sample.Signatures` (`ref`/`out`/`params` parameters, `private` methods, methods on a struct, runtime fallback).
 
 ### Changed
 
-- Documentation: *Known limitations* is grouped into fewer sections, each showing the code that doesn't work.
+- Documentation: _Known limitations_ is grouped into fewer sections, each showing the code that doesn't work.
 
 ### Fixed
 
@@ -59,6 +65,7 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 - Anonymous types can be passed to `[DuckTyped]` methods and `Duck.As`.
 - Adapters forward `Equals`, `GetHashCode` and `ToString` to the wrapped instance; `Duck.Unwrap` returns it.
 
-[unreleased]: https://github.com/linkdotnet/IfItQuacks/compare/v1.1.0...HEAD
+[unreleased]: https://github.com/linkdotnet/IfItQuacks/compare/v1.2.0...HEAD
+[v1.2.0]: https://github.com/linkdotnet/IfItQuacks/compare/v1.1.0...v1.2.0
 [v1.1.0]: https://github.com/linkdotnet/IfItQuacks/compare/v1.0.0...v1.1.0
 [v1.0.0]: https://github.com/linkdotnet/IfItQuacks/compare/64a9c6ea49de0a82dd1cd59556dbaebca74381cb...v1.0.0
