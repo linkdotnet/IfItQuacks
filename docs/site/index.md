@@ -38,4 +38,22 @@ public static partial class Ops
 Ops.Foo(new A()); // A.Do
 ```
 
+Under the hood the generator writes a small wrapper that implements the shape and replaces your call so it passes that wrapper instead:
+
+```csharp
+// You write
+Ops.Foo(new A());
+
+// The generator emits (simplified)
+struct A_As_IDoable(A value) : IDoable
+{
+    public void Do() => value.Do();
+}
+
+// and the compiler actually calls
+Ops.Foo(new A_As_IDoable(new A()));
+```
+
+If `A` has no matching `Do()`, the build fails. See [How does it work?](articles/concepts.md) for details.
+
 Head over to [Getting started](articles/getting_started.md) for the setup.

@@ -76,6 +76,26 @@ int number = Ops.Unwrap(new IntBox());             // 42
 string text = Ops.Unwrap(new Box<string>("quack")); // quack
 ```
 
+## How does it work?
+
+At compile time the generator writes a small wrapper that implements the shape and forwards to your type, then replaces your call so it passes that wrapper instead:
+
+```csharp
+// You write
+Ops.Foo(new A());
+
+// The generator emits (simplified)
+struct A_As_IDoable(A value) : IDoable
+{
+    public void Do() => value.Do();
+}
+
+// and the compiler actually calls
+Ops.Foo(new A_As_IDoable(new A()));
+```
+
+If `A` has no matching `Do()`, the build fails. Details: [How does it work?](https://linkdotnet.github.io/IfItQuacks/articles/concepts.html)
+
 ## What does it solve?
 
 Sometimes you want to treat unrelated types uniformly - types from third-party libraries you can't modify, generated code, or simply types that happen to share members - without writing wrapper classes by hand. Languages like Go and TypeScript offer structural typing out of the box; IfItQuacks brings a compile-time checked flavor of it to C#:
