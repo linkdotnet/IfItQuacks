@@ -4,29 +4,107 @@ uid: known_limitations
 
 # Known limitations
 
-IfItQuacks is intentionally narrow. The following scenarios are currently not supported:
+Everything IfItQuacks does happens while your project compiles: the generator looks at a call, matches the argument's **compile-time type** against the interface, and rewrites the call. Nearly every limitation below follows from that one sentence - the generator has to see the call, and it has to be able to name the type it adapts.
 
-- **Signature**: only interface parameters passed by value are duck-typed (`ref`, `in` and `out` interface parameters behave as usual), and `[DuckTyped]` methods must not be overloaded by another `[DuckTyped]` method of the same name ([`IFITQUACKS004`](diagnostics.md#ifitquacks004)).
-- **Containing type**: the containing type has to be `partial` ([`IFITQUACKS002`](diagnostics.md#ifitquacks002)) and non-generic. Interfaces, `file`-local types and extension methods are not supported ([`IFITQUACKS004`](diagnostics.md#ifitquacks004)).
-- **Assignable types only**: member types have to be assignable through implicit identity, reference, boxing, numeric or nullable conversions. User-defined conversion operators aren't considered, `ref`/`out`/`in` parameters and events must match exactly, and members must match by name.
-- **Static type only**: matching uses the argument's compile-time type. Passing an open generic type parameter (for example from inside a generic method) can't be verified; the call ends up in the generated fallback, which works if the value implements the interface at runtime and throws `DuckTypeMismatchException` otherwise.
-- **`null` arguments**: `null`, `default` and omitted arguments for interface parameters are supported for methods with up to four interface parameters. Beyond that, every interface parameter needs an argument with a type.
-- **Same compilation**: only calls inside the project referencing the generator are intercepted. Calls from other assemblies bind to the fallback, which only works for values implementing the interface.
-- **Direct invocations**: only direct calls like `Ops.Foo(x)` or `Foo(x)` are intercepted, not method groups or delegates.
-- **Generic methods**: every type parameter of a generic `[DuckTyped]` method must appear in an interface parameter type ([`IFITQUACKS004`](diagnostics.md#ifitquacks004)). Type arguments are inferred by exact matching, without variance or implicit conversions. Anonymous types can't be passed to generic `[DuckTyped]` methods ([`IFITQUACKS001`](diagnostics.md#ifitquacks001)). Arguments whose type is still an open generic (e.g. `Box<T>` inside another generic method) are not supported, and the compiler reports `CS0411`.
-- **Generated overloads**: `[DuckTyped]` methods get generated overloads on the containing type (see [How does it work?](concepts.md)). They are hidden from IntelliSense, but still part of the type, e.g. for reflection.
-- **`private` methods**: interceptors live in their own namespace, so a `private`, `protected` or `private protected` `[DuckTyped]` method is called through a generated `internal` forwarder (`__IfItQuacks_<Name>`). It is hidden from IntelliSense, but makes the method reachable within the assembly.
-- **Interface members**: generic methods (`U Map<U>()`) and `static abstract` members can't be adapted for types that don't implement the interface ([`IFITQUACKS005`](diagnostics.md#ifitquacks005)).
-- **InternalsVisibleTo**: the generated `IfItQuacks` types are `internal`. If a project using IfItQuacks grants `InternalsVisibleTo` to another project that uses it too, the compiler warns about the duplicate types (`CS0436`) and uses the local ones.
-- **Boxing**: the adapter is passed as an interface, so every intercepted call allocates a small object (24 bytes on x64 for class arguments) unless the JIT inlines your method and can stack-allocate it. `Duck.As` with a `readonly struct` allocates twice. See [Allocations](concepts.md#allocations).
-- **`Duck.As` static type**: `Duck.As` takes `object`, so the argument's static type matters. `Duck.As<IDoable>((object)a)` is reported as a mismatch ([`IFITQUACKS001`](diagnostics.md#ifitquacks001)) because `object` has no `Do()`. Inside generic code (`Duck.As<IDoable>(value)` with `value` of type `T`) the call can't be verified and only works if the value implements the interface at runtime, otherwise it throws `DuckTypeMismatchException`; a type parameter as target (`Duck.As<TShape>`) is rejected with [`IFITQUACKS007`](diagnostics.md#ifitquacks007).
-- **Anonymous types**: their properties are read-only, so only interfaces with get-only properties can be satisfied. A property whose type contains an anonymous type as a type argument or array element (e.g. `new[] { new { A = 1 } }`) can't be named by the generated adapter ([`IFITQUACKS001`](diagnostics.md#ifitquacks001)).
-- **Identity**: adapters forward `Equals`, `GetHashCode` and `ToString`, but `==` and `ReferenceEquals` on the interface compare the boxed adapters, which differ for every conversion. Use `Equals` or `Duck.Unwrap`.
-- **Not a mapper**: `Duck.As` returns a view that forwards to the original instance. It doesn't copy values, rename members or convert nested objects.
+## The call has to be visible
+
+Only direct calls inside the project that references the generator are intercepted.
+
+```csharp
+Ops.Describe(new Person());              // intercepted
+Describe(new Person());                  // intercepted (implicit this)
+
+Func<INamed, string> f = Ops.Describe;   // not intercepted: a method group, not a call
+f(duck);                                 // binds to the fallback
+
+// A call from another assembly referencing yours: also the fallback.
+```
+
+The fallback is the generated overload that accepts anything and casts at runtime. It works if the value implements the interface and throws `DuckTypeMismatchException` otherwise.
+
+## Matching uses the static type
+
+The generator only sees the type the compiler wrote down at the call site.
+
+```csharp
+var duck = new Person();
+Duck.As<INamed>(duck);           // fine
+Duck.As<INamed>((object)duck);   // IFITQUACKS001: object has no Name
+Duck.As<TShape>(duck);           // IFITQUACKS007: the target must be an interface, not a type parameter
+
+static string Wrap<T>(T value) => Ops.Describe(value); // T is open: runtime fallback
+```
+
+## Members match by name and assignable type
+
+Member types only have to be *assignable* (identity, reference, boxing, numeric or nullable conversions). Nothing else is bridged: no renaming, no user-defined conversions, and `ref`/`out`/`in` parameters and events have to match exactly.
+
+```csharp
+public interface IPerson { string Name { get; } }
+
+public class Employee { public string FullName => "Steven"; }                    // IFITQUACKS001: no Name
+public class Salary { public static implicit operator string(Salary s) => ""; }  // conversions are ignored
+```
+
+`Duck.As` is not a mapper either: it returns a view that forwards to the original instance. It never copies values, renames members or converts nested objects.
+
+## Method and containing type
+
+```csharp
+public static partial class Ops
+{
+    [DuckTyped] public static string A(INamed n) => n.Name;           // works
+    [DuckTyped] public static string A(INamed n, int i) => n.Name;    // IFITQUACKS004: one [DuckTyped] method per name
+    [DuckTyped] public static string B(this INamed n) => n.Name;      // IFITQUACKS004: extension method
+    [DuckTyped] public static string C(ref INamed n) => n.Name;       // IFITQUACKS003: no interface parameter by value
+    [DuckTyped] public static T D<T>(INamed n, T value) => value;     // IFITQUACKS004: T unused by an interface parameter
+}
+
+public class Ops2 { [DuckTyped] public static string E(INamed n) => n.Name; }             // IFITQUACKS002: not partial
+public partial class Ops3<T> { [DuckTyped] public static string F(INamed n) => n.Name; }  // IFITQUACKS004: generic type
+public partial interface IOps { [DuckTyped] static string G(INamed n) => n.Name; }        // IFITQUACKS004: interface
+file partial class Ops4 { [DuckTyped] public static string H(INamed n) => n.Name; }       // IFITQUACKS004: file-local
+```
+
+`null`, `default` and omitted interface arguments work for methods with **up to four** interface parameters. Beyond that, every interface parameter needs an argument with a type.
+
+## Interface members that can't be adapted
+
+```csharp
+public interface IMapper
+{
+    U Map<U>();                       // IFITQUACKS005: generic interface method
+    static abstract IMapper Create();  // IFITQUACKS005: static abstract member
+}
+```
+
+Both are only reported for arguments that need an adapter. A type implementing the interface itself is passed through untouched.
+
+## Generic `[DuckTyped]` methods
+
+Type arguments are inferred by exact matching against the argument's members - no variance, no implicit conversions.
+
+```csharp
+[DuckTyped] public static T First<T>(IContainer<T> c) => c.Get();
+
+First(new IntBox());                       // T = int
+First(new { Get = 1 });                    // IFITQUACKS001: no anonymous types here
+static T Nested<T>(Box<T> b) => First(b);  // CS0411: Box<T> is still open
+```
+
+## Anonymous types
+
+Their properties are read-only, so only interfaces with get-only properties can be satisfied. A property whose type *contains* an anonymous type can't be named by the generated adapter.
+
+```csharp
+Duck.As<INamed>(new { Name = "Steven" });                 // works
+Duck.As<IWritableName>(new { Name = "Steven" });          // IFITQUACKS001: needs a setter
+Duck.As<IRows>(new { Rows = new[] { new { A = 1 } } });   // IFITQUACKS001: property type can't be named
+```
 
 ## Structs
 
-The argument is wrapped in an adapter, which holds a **copy** of it. For classes that copy is just a reference, but for structs it is the whole value. To avoid surprises, struct arguments are restricted and reported with [`IFITQUACKS006`](diagnostics.md#ifitquacks006):
+The adapter holds a **copy** of the argument. For classes that copy is a reference, for structs it is the whole value, so struct arguments are restricted and reported with [`IFITQUACKS006`](diagnostics.md#ifitquacks006):
 
 | Argument type | Supported | Why |
 |---|---|---|
@@ -43,10 +121,32 @@ public struct Counter
     public void Increment() => Count++;
 }
 
-var counter = new Counter();
-Ops.Bump(counter); // error IFITQUACKS006: mutable structs are copied into an adapter, ...
+Ops.Bump(new Counter()); // IFITQUACKS006: mutable structs are copied into an adapter, ...
 ```
 
-If you need a mutable struct, either make it implement the interface or wrap it in a class yourself - both make the copy semantics explicit.
+If you need a mutable struct, make it implement the interface or wrap it in a class - both make the copy explicit. Passing it by `ref` or `in` wouldn't help: the interceptor has to keep the signature of the call it replaces, which takes the argument by value.
 
-Passing the argument by `ref` or `in` wouldn't help either: the generated interceptor has to match the signature of the call it replaces, which takes the argument by value.
+A `[DuckTyped]` method *on* a struct is a different thing and works: the receiver is passed by reference, so mutations reach the caller's value.
+
+## Identity
+
+Adapters forward `Equals`, `GetHashCode` and `ToString`, but every conversion creates its own adapter.
+
+```csharp
+var view = Duck.As<INamed>(person);
+var other = Duck.As<INamed>(person);
+
+view.Equals(other);            // true
+ReferenceEquals(view, other);  // false - two boxed adapters
+Duck.Unwrap(view) == person;   // true
+```
+
+## Generated code is part of your type
+
+- `[DuckTyped]` methods get generated overloads on the containing type. They are hidden from IntelliSense, but still visible through reflection (see [How does it work?](concepts.md)).
+- A `private`, `protected` or `private protected` `[DuckTyped]` method is called through a generated `internal` forwarder (`__IfItQuacks_<Name>`), which makes it reachable inside the assembly.
+- The generated `IfItQuacks` types are `internal`. If a project using IfItQuacks grants `InternalsVisibleTo` to another project that uses it too, the compiler warns about the duplicate types (`CS0436`) and uses the local ones.
+
+## Allocations
+
+Passing an adapter as an interface boxes it: 24 bytes for a class argument, more for a struct, and `Duck.As` with a `readonly struct` allocates twice. The JIT often removes that box when nothing escapes your method, but don't rely on it. See [Benchmarks](benchmarks.md) for measured numbers and [Allocations](concepts.md#allocations) for the mechanics.

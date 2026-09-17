@@ -6,6 +6,15 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 ## [Unreleased]
 
+### Added
+
+- Documentation: a [Benchmarks](docs/site/articles/benchmarks.md) page with measured numbers (BenchmarkDotNet, `MemoryDiagnoser`) for duck-typed calls and for `Duck.As` used as a view instead of a mapper.
+- Samples: `IfItQuacks.Sample.Members` (events, indexers, `ref` returns, default interface members) and `IfItQuacks.Sample.Signatures` (`ref`/`out`/`params` parameters, `private` methods, methods on a struct, runtime fallback).
+
+### Changed
+
+- Documentation: *Known limitations* is grouped into fewer sections, each showing the code that doesn't work.
+
 ### Fixed
 
 - `IFITQUACKS005` no longer mentions `ref` returns, which are supported now, and its title matches the documentation.

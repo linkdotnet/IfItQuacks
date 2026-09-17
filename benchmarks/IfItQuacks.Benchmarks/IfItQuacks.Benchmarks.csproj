@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- BenchmarkDotNet requires public benchmark types and members. -->
+    <NoWarn>$(NoWarn);CA1515</NoWarn>
+    <!-- Benchmark inputs are never null, so argument checks would only distort the measurements. -->
+    <NoWarn>$(NoWarn);CA1062</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+  </ItemGroup>
+
+</Project>

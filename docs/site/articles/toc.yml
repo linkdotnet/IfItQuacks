@@ -5,5 +5,7 @@
       href: concepts.md
     - name: Diagnostics
       href: diagnostics.md
+    - name: Benchmarks
+      href: benchmarks.md
 - name: Known limitations
   href: known_limitations.md

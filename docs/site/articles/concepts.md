@@ -123,7 +123,7 @@ Nothing here is free, but nothing is hidden either. The generated code is what y
 | `readonly struct` via `[DuckTyped]` | The interceptor takes the struct by value; the adapter holding a copy is boxed. | one object: 16 bytes + struct size |
 | `readonly struct` via `Duck.As` | The struct is boxed into the `object` parameter, unboxed by the interceptor, then the adapter is boxed. | two objects |
 
-Numbers were measured with `GC.GetAllocatedBytesForCurrentThread`. The JIT may elide the box when it can inline your method and prove the adapter doesn't escape, but don't rely on it. Prefer classes (or types implementing the interface) on hot paths when using `Duck.As`.
+Numbers were measured with `GC.GetAllocatedBytesForCurrentThread`; see [Benchmarks](benchmarks.md) for timings. The JIT may elide the box when it can inline your method and prove the adapter doesn't escape, but don't rely on it. Prefer classes (or types implementing the interface) on hot paths when using `Duck.As`.
 
 ## Generic methods
 

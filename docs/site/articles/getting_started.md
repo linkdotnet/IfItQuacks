@@ -220,3 +220,5 @@ Runnable examples live in [`samples`](https://github.com/linkdotnet/IfItQuacks/t
 | `IfItQuacks.Sample.Generics` | Generic interfaces and generic `[DuckTyped]` methods |
 | `IfItQuacks.Sample.FrameworkInterfaces` | `IEnumerable<T>` parameters and `Duck.As<IDisposable>` with `using` |
 | `IfItQuacks.Sample.Conversion` | `Duck.As` for collections and read-only views, identity and `Duck.Unwrap` |
+| `IfItQuacks.Sample.Members` | Events, indexers, `ref` returns and default interface members |
+| `IfItQuacks.Sample.Signatures` | `ref`/`out`/`params` parameters, `private` methods, methods on a struct and the runtime fallback |
