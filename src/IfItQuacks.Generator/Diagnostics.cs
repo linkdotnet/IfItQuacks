@@ -51,4 +51,12 @@ internal static class Diagnostics
         category: "IfItQuacks",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ConversionTargetNotShape = new(
+        id: "IFITQUACKS007",
+        title: "Duck.As type argument must be a [DuckShape] interface",
+        messageFormat: "'Duck.As<{0}>' requires an interface marked [DuckShape]",
+        category: "IfItQuacks",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 }

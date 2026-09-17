@@ -14,7 +14,9 @@ IfItQuacks is intentionally narrow. The following scenarios are currently not su
 - **Generic methods**: every type parameter of a generic `[DuckTyped]` method must appear in its parameter type ([`IFITQUACKS004`](diagnostics.md#ifitquacks004)). Type arguments are inferred by exact matching, without variance or implicit conversions. Arguments whose type is still an open generic (e.g. `Box<T>` inside another generic method) are not supported, and the compiler reports `CS0411`.
 - **Generated overloads**: generic `[DuckTyped]` methods are dispatched through generated concrete overloads (see [Generic methods](concepts.md#generic-methods)). They are visible on the containing type, e.g. in IntelliSense.
 - **Generic shape members**: shape members that are generic methods themselves (`U Map<U>()`) are not supported.
-- **Boxing**: the adapter is passed as an interface, so every intercepted call allocates a small object (24 bytes on x64) unless the JIT inlines your method and can stack-allocate it.
+- **Boxing**: the adapter is passed as an interface, so every intercepted call allocates a small object (24 bytes on x64 for class arguments) unless the JIT inlines your method and can stack-allocate it. `Duck.As` with a `readonly struct` allocates twice. See [Allocations](concepts.md#allocations).
+- **`Duck.As` static type**: `Duck.As` takes `object`, so the argument's static type matters. `Duck.As<IDoable>((object)a)` is reported as a mismatch ([`IFITQUACKS001`](diagnostics.md#ifitquacks001)) because `object` has no `Do()`. Inside generic code (`Duck.As<IDoable>(value)` with `value` of type `T`) the call can't be verified and throws `DuckShapeMismatchException`; a type parameter as target (`Duck.As<TShape>`) is rejected with [`IFITQUACKS007`](diagnostics.md#ifitquacks007).
+- **Not a mapper**: `Duck.As` returns a view that forwards to the original instance. It doesn't copy values, rename members or convert nested objects.
 
 ## Structs
 

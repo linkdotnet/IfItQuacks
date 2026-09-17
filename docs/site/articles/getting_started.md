@@ -26,6 +26,7 @@ The generator adds the following types to the `IfItQuacks` namespace of your pro
 |---|---|
 | `DuckShapeAttribute` | Marks an interface as a structural "shape" that other types may satisfy without implementing it. |
 | `DuckTypedAttribute` | Marks a method whose parameter accepts any type that structurally matches its `[DuckShape]` interface. |
+| `Duck` | `Duck.As<TShape>(value)` converts a value to a shape it structurally satisfies. |
 | `DuckShapeMismatchException` | Thrown by the generated fallback if a call could not be verified at compile time. |
 
 ## Defining a shape
@@ -97,6 +98,30 @@ string text = Ops.Unwrap(new Box<string>("quack")); // T = string
 
 Every type parameter of the method has to appear in the parameter type, otherwise it can't be inferred ([`IFITQUACKS004`](diagnostics.md#ifitquacks004)). Closed generic shapes like `IContainer<int>` work on non-generic methods as well.
 
+## Converting explicitly
+
+Use `Duck.As<TShape>(value)` when the duck-typed value has to outlive a single call - for example to store it in a field, add it to a collection or return it:
+
+```csharp
+List<INameable> nameables = [Duck.As<INameable>(new Person()), Duck.As<INameable>(new Pet())];
+```
+
+The same compile-time checks apply as for `[DuckTyped]` methods. The type argument must be a `[DuckShape]` interface ([`IFITQUACKS007`](diagnostics.md#ifitquacks007)).
+
+### A view, not a mapper
+
+`Duck.As` doesn't copy anything. The returned object forwards to the original instance:
+
+```csharp
+var customer = new Customer { Name = "Steven", Email = "steven@example.com" };
+var view = Duck.As<ICustomerView>(customer); // ICustomerView { string Name { get; } string Email { get; } }
+
+customer.Email = "quack@example.com";
+Console.WriteLine(view.Email); // quack@example.com
+```
+
+That makes it a cheap way to expose a narrower view of a type, e.g. hiding members of an entity behind a get-only shape. It is not a replacement for a mapper: members must match by name and type, nested objects and collections are not converted, and the result is not a standalone DTO (serializers see the adapter type, and changes to the source are still visible).
+
 Runnable examples live in [`samples`](https://github.com/linkdotnet/IfItQuacks/tree/main/samples), one project per showcase:
 
 | Project | Shows |
@@ -104,3 +129,4 @@ Runnable examples live in [`samples`](https://github.com/linkdotnet/IfItQuacks/t
 | `IfItQuacks.Sample.Methods` | Duck typing unrelated classes via a method shape |
 | `IfItQuacks.Sample.Properties` | Read-write property shapes |
 | `IfItQuacks.Sample.Generics` | Generic shapes and generic `[DuckTyped]` methods |
+| `IfItQuacks.Sample.Conversion` | `Duck.As` for collections and read-only views |

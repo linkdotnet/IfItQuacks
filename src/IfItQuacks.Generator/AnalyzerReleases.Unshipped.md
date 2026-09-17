@@ -11,3 +11,4 @@ IFITQUACKS003 | IfItQuacks | Error | Duck-typed parameter must be a [DuckShape] 
 IFITQUACKS004 | IfItQuacks | Error | Unsupported [DuckTyped] method signature
 IFITQUACKS005 | IfItQuacks | Error | Unsupported shape member
 IFITQUACKS006 | IfItQuacks | Error | Unsupported struct argument
+IFITQUACKS007 | IfItQuacks | Error | Duck.As type argument must be a [DuckShape] interface

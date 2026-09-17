@@ -17,6 +17,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
 {
     private const string DuckTypedAttributeName = "IfItQuacks.DuckTypedAttribute";
     private const string DuckShapeAttributeName = "IfItQuacks.DuckShapeAttribute";
+    private const string DuckTypeName = "IfItQuacks.Duck";
     private const string GeneratedNamespace = "IfItQuacks.Generated";
 
     /// <inheritdoc />
@@ -72,7 +73,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
 
         var parameterType = method.Parameters[0].Type;
         if (parameterType is not INamedTypeSymbol { TypeKind: TypeKind.Interface } shapeType ||
-            !shapeType.OriginalDefinition.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == DuckShapeAttributeName))
+            !IsDuckShape(shapeType))
         {
             diagnostics.Add(Diagnostic.Create(Diagnostics.ParameterNotShape, location, method.Name,
                 parameterType.ToDisplayString()));
@@ -100,7 +101,8 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             if (model.Shape is not null) validMethods.Add(model);
         }
 
-        if (validMethods.Count == 0) return;
+        var duckAsMethod = compilation.GetTypeByMetadataName(DuckTypeName)?.GetMembers("As").OfType<IMethodSymbol>().FirstOrDefault();
+        if (validMethods.Count == 0 && duckAsMethod is null) return;
 
         var methodsByName = validMethods
             .GroupBy(m => m.Method.Name)
@@ -144,7 +146,11 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             foreach (var invocation in invocations)
             {
                 var name = GetInvokedName(invocation);
-                if (name is null || !methodsByName.TryGetValue(name, out var duckMethod))
+                if (name is null)
+                    continue;
+
+                var isDuckAsName = duckAsMethod is not null && name == duckAsMethod.Name;
+                if (!methodsByName.TryGetValue(name, out var duckMethod) && !isDuckAsName)
                     continue;
 
                 semanticModel ??= compilation.GetSemanticModel(tree);
@@ -154,7 +160,18 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
                     ? [s]
                     : symbolInfo.CandidateSymbols.OfType<IMethodSymbol>().ToImmutableArray();
 
-                if (!candidates.Any(c => SymbolEqualityComparer.Default.Equals(c.OriginalDefinition, duckMethod.Method)))
+                var duckAsCall = isDuckAsName
+                    ? candidates.FirstOrDefault(c => SymbolEqualityComparer.Default.Equals(c.OriginalDefinition, duckAsMethod))
+                    : null;
+                if (duckAsCall is not null)
+                {
+                    if (TryInterceptDuckAs(spc, semanticModel, invocation, duckAsCall, adaptersEmitted, adapterSources,
+                            interceptorSources, interceptorCount + 1))
+                        interceptorCount++;
+                    continue;
+                }
+
+                if (duckMethod is null || !candidates.Any(c => SymbolEqualityComparer.Default.Equals(c.OriginalDefinition, duckMethod.Method)))
                     continue;
 
                 if (invocation.ArgumentList.Arguments.Count != 1)
@@ -185,33 +202,15 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
 
                 var shape = (INamedTypeSymbol)targetMethod.Parameters[0].Type;
 
-                var mismatch = ShapeMatcher.FindMismatch(shape, concreteType);
-                if (mismatch is not null)
-                {
-                    spc.ReportDiagnostic(Diagnostic.Create(Diagnostics.ShapeMismatch, argExpr.GetLocation(),
-                        concreteType.ToDisplayString(), shape.ToDisplayString(), mismatch));
+                if (!TryVerifyArgument(spc, argExpr, shape, concreteType, out var implementsDirectly))
                     continue;
-                }
-
-                var implementsDirectly = concreteType.AllInterfaces
-                    .Any(i => SymbolEqualityComparer.Default.Equals(i, shape));
-
-                var unsupportedStructKind = GetUnsupportedStructKind(concreteType, implementsDirectly);
-                if (unsupportedStructKind is not null)
-                {
-                    spc.ReportDiagnostic(Diagnostic.Create(Diagnostics.UnsupportedStructArgument, argExpr.GetLocation(),
-                        concreteType.ToDisplayString(), shape.ToDisplayString(), unsupportedStructKind));
-                    continue;
-                }
 
                 if (targetMethod.IsGenericMethod)
                 {
                     if (implementsDirectly)
                         continue;
 
-                    var genericAdapterName = AdapterEmitter.GetAdapterName(shape, concreteType);
-                    if (adaptersEmitted.Add(genericAdapterName))
-                        AdapterEmitter.Emit(adapterSources, shape, concreteType, genericAdapterName);
+                    var genericAdapterName = EnsureAdapter(adaptersEmitted, adapterSources, shape, concreteType);
 
                     if (!duckOverloads.TryGetValue(duckMethod, out var overloads))
                         duckOverloads[duckMethod] = overloads = new Dictionary<string, DuckOverload>();
@@ -223,13 +222,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
                 if (interceptableLocation is null)
                     continue;
 
-                var adapterTypeName = "";
-                if (!implementsDirectly)
-                {
-                    adapterTypeName = AdapterEmitter.GetAdapterName(duckMethod.Shape!, concreteType);
-                    if (adaptersEmitted.Add(adapterTypeName))
-                        AdapterEmitter.Emit(adapterSources, duckMethod.Shape!, concreteType, adapterTypeName);
-                }
+                var adapterTypeName = implementsDirectly ? "" : EnsureAdapter(adaptersEmitted, adapterSources, shape, concreteType);
 
                 interceptorCount++;
                 EmitInterceptor(interceptorSources, interceptableLocation, duckMethod.Method, concreteType,
@@ -261,6 +254,81 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         }
     }
 
+    private static bool TryInterceptDuckAs(SourceProductionContext spc, SemanticModel semanticModel, InvocationExpressionSyntax invocation,
+        IMethodSymbol duckAsCall, HashSet<string> adaptersEmitted, StringBuilder adapterSources, StringBuilder interceptorSources, int index)
+    {
+        var typeArgument = duckAsCall.TypeArguments[0];
+        if (typeArgument is not INamedTypeSymbol { TypeKind: TypeKind.Interface } shape || !IsDuckShape(shape))
+        {
+            spc.ReportDiagnostic(Diagnostic.Create(Diagnostics.ConversionTargetNotShape, invocation.GetLocation(),
+                typeArgument.ToDisplayString()));
+            return false;
+        }
+
+        if (invocation.ArgumentList.Arguments.Count != 1 || ContainsAnyTypeParameter(shape))
+            return false;
+
+        var argExpr = invocation.ArgumentList.Arguments[0].Expression;
+        if (semanticModel.GetTypeInfo(argExpr, spc.CancellationToken).Type is not INamedTypeSymbol concreteType ||
+            concreteType.TypeKind == TypeKind.Error || ContainsAnyTypeParameter(concreteType))
+            return false;
+
+        if (!TryVerifyArgument(spc, argExpr, shape, concreteType, out var implementsDirectly))
+            return false;
+
+        var location = semanticModel.GetInterceptableLocation(invocation, spc.CancellationToken);
+        if (location is null)
+            return false;
+
+        var shapeTypeName = shape.ToDisplayString();
+        var result = implementsDirectly
+            ? "value"
+            : $"new global::{GeneratedNamespace}.{EnsureAdapter(adaptersEmitted, adapterSources, shape, concreteType)}(({concreteType.ToDisplayString()})value)";
+
+        interceptorSources.AppendLine();
+        interceptorSources.AppendLine("        " + location.GetInterceptsLocationAttributeSyntax());
+        interceptorSources.AppendLine($"        public static global::{shapeTypeName} Interceptor_{index}(object value) => (global::{shapeTypeName})({result});");
+        return true;
+    }
+
+    private static bool TryVerifyArgument(SourceProductionContext spc, ExpressionSyntax argExpr, INamedTypeSymbol shape,
+        INamedTypeSymbol concreteType, out bool implementsDirectly)
+    {
+        implementsDirectly = false;
+
+        var mismatch = ShapeMatcher.FindMismatch(shape, concreteType);
+        if (mismatch is not null)
+        {
+            spc.ReportDiagnostic(Diagnostic.Create(Diagnostics.ShapeMismatch, argExpr.GetLocation(),
+                concreteType.ToDisplayString(), shape.ToDisplayString(), mismatch));
+            return false;
+        }
+
+        implementsDirectly = concreteType.AllInterfaces.Any(i => SymbolEqualityComparer.Default.Equals(i, shape));
+
+        var unsupportedStructKind = GetUnsupportedStructKind(concreteType, implementsDirectly);
+        if (unsupportedStructKind is not null)
+        {
+            spc.ReportDiagnostic(Diagnostic.Create(Diagnostics.UnsupportedStructArgument, argExpr.GetLocation(),
+                concreteType.ToDisplayString(), shape.ToDisplayString(), unsupportedStructKind));
+            return false;
+        }
+
+        return true;
+    }
+
+    private static string EnsureAdapter(HashSet<string> adaptersEmitted, StringBuilder adapterSources, INamedTypeSymbol shape,
+        INamedTypeSymbol concreteType)
+    {
+        var adapterName = AdapterEmitter.GetAdapterName(shape, concreteType);
+        if (adaptersEmitted.Add(adapterName))
+            AdapterEmitter.Emit(adapterSources, shape, concreteType, adapterName);
+        return adapterName;
+    }
+
+    private static bool IsDuckShape(INamedTypeSymbol type) =>
+        type.OriginalDefinition.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == DuckShapeAttributeName);
+
     // A struct implementing the shape is boxed by the compiler itself, so only adapter-wrapped mutable structs would silently lose mutations.
     private static string? GetUnsupportedStructKind(INamedTypeSymbol type, bool implementsDirectly)
     {
@@ -275,7 +343,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
 
     private static string? GetInvokedName(InvocationExpressionSyntax invocation) => invocation.Expression switch
     {
-        IdentifierNameSyntax id => id.Identifier.Text,
+        SimpleNameSyntax name => name.Identifier.Text,
         MemberAccessExpressionSyntax member => member.Name.Identifier.Text,
         _ => null,
     };

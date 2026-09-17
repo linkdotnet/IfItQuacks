@@ -55,3 +55,15 @@ Ops.Bump(new Counter()); // error IFITQUACKS006
 ```
 
 For ref structs the compiler additionally reports `CS9244`, because the generated fallback overload can't accept a ref struct.
+
+## IFITQUACKS007
+
+**Duck.As type argument must be a [DuckShape] interface**
+
+`Duck.As<TShape>` only converts to interfaces decorated with `[DuckShape]`. This is also reported for type parameters, because the target can't be verified at compile time.
+
+```csharp
+public interface IDoable { void Do(); }
+
+var doable = Duck.As<IDoable>(new A()); // error IFITQUACKS007
+```

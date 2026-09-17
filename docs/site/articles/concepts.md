@@ -57,9 +57,38 @@ public static void Interceptor_1(A value)
 
 The compiler replaces the call to the fallback overload with the interceptor, which wraps the argument and calls your original method. The cast to the interface makes sure overload resolution picks your method and not the generic fallback.
 
-Because the adapter is passed as an interface, each call boxes the adapter. The generated members are trivial forwarders, so they are not marked with `[MethodImpl(MethodImplOptions.AggressiveInlining)]`: calls through an interface can't be inlined by that attribute, and benchmarks showed no difference.
+Because the adapter is passed as an interface, each call boxes the adapter (see [Allocations](#allocations)). The generated members are trivial forwarders, so they are not marked with `[MethodImpl(MethodImplOptions.AggressiveInlining)]`: calls through an interface can't be inlined by that attribute, and benchmarks showed no difference.
 
 Since the adapter holds a copy of the argument, only classes and `readonly struct`s are supported. See [Known limitations](known_limitations.md#structs) for details.
+
+## Duck.As
+
+`Duck.As<TShape>(object value)` is part of the generated `IfItQuacks` namespace. Its body only throws `DuckShapeMismatchException`; every call the generator can verify is intercepted instead:
+
+```csharp
+// You write
+IDoable doable = Duck.As<IDoable>(new A());
+
+// The generator emits
+[InterceptsLocation(...)]
+public static global::IDoable Interceptor_2(object value) =>
+    (global::IDoable)(new global::IfItQuacks.Generated.ShapeAdapter_IDoable_A((A)value));
+```
+
+The argument's static type (`A`) drives shape matching and adapter selection, exactly as for `[DuckTyped]` methods, and the same adapters are shared. If `A` already implements `IDoable`, the interceptor is a plain cast and no adapter is involved.
+
+## Allocations
+
+Nothing here is free, but nothing is hidden either. The generated code is what you would write by hand:
+
+| Scenario | What happens | Allocation (x64/arm64) |
+|---|---|---|
+| Class argument | The adapter struct holds the reference and is boxed as the interface. | 24 bytes, one object |
+| Argument already implements the shape | Passed through (`[DuckTyped]`) or cast (`Duck.As`). | none |
+| `readonly struct` via `[DuckTyped]` | The interceptor takes the struct by value; the adapter holding a copy is boxed. | one object: 16 bytes + struct size |
+| `readonly struct` via `Duck.As` | The struct is boxed into the `object` parameter, unboxed by the interceptor, then the adapter is boxed. | two objects |
+
+Numbers were measured with `GC.GetAllocatedBytesForCurrentThread`. The JIT may elide the box when it can inline your method and prove the adapter doesn't escape, but don't rely on it. Prefer classes (or types implementing the shape) on hot paths when using `Duck.As`.
 
 ## Generic methods
 

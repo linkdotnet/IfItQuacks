@@ -76,6 +76,21 @@ int number = Ops.Unwrap(new IntBox());             // 42
 string text = Ops.Unwrap(new Box<string>("quack")); // quack
 ```
 
+### Converting explicitly with `Duck.As`
+
+`[DuckTyped]` methods only cover passing a value into a method. To store a duck-typed value in a field, a collection or return it, convert it explicitly:
+
+```csharp
+List<IDoable> doables = [Duck.As<IDoable>(new A()), Duck.As<IDoable>(new B())];
+
+foreach (var doable in doables)
+    doable.Do();
+```
+
+The call is verified at compile time just like a `[DuckTyped]` call and replaced by `new A_As_IDoable(a)`. If the value already implements the shape, it becomes a plain cast.
+
+`Duck.As` is **not a mapper**: nothing is copied. The result is a live view that forwards every member access to the original object, so later changes to the object are visible through the shape (and setters write back to it). This makes it handy for exposing a narrower, read-only view of a type (`ICustomerView` over an entity), but it won't create a DTO, rename members or convert nested types for you.
+
 ## How does it work?
 
 At compile time the generator writes a small wrapper that implements the shape and forwards to your type, then replaces your call so it passes that wrapper instead:
@@ -94,7 +109,20 @@ struct A_As_IDoable(A value) : IDoable
 Ops.Foo(new A_As_IDoable(new A()));
 ```
 
-If `A` has no matching `Do()`, the build fails. Details: [How does it work?](https://linkdotnet.github.io/IfItQuacks/articles/concepts.html)
+If `A` has no matching `Do()`, the build fails.
+
+### Does it allocate?
+
+Yes, exactly like a handwritten wrapper would. The adapter is a struct, but it is handed out as an interface, so it gets boxed:
+
+| Call | Allocation (x64/arm64) |
+|---|---|
+| Class argument | one adapter object, 24 bytes |
+| Argument already implementing the shape | none - passed through or cast |
+| `readonly struct` via `[DuckTyped]` | one adapter object (its size depends on the struct) |
+| `readonly struct` via `Duck.As` | two: the struct is boxed into the `object` parameter, then the adapter is boxed |
+
+There is no hidden cost beyond that: no reflection, no caching, no runtime code generation. Details: [How does it work?](https://linkdotnet.github.io/IfItQuacks/articles/concepts.html)
 
 ## What does it solve?
 
@@ -108,6 +136,7 @@ Sometimes you want to treat unrelated types uniformly - types from third-party l
 
 IfItQuacks is intentionally narrow. Current limitations:
 
+- `Duck.As` and `[DuckTyped]` calls are verified against the argument's static type. A value typed as `object` or an open generic type parameter can't be verified (`IFITQUACKS001` or a runtime `DuckShapeMismatchException`, respectively).
 - `[DuckTyped]` methods must be `static`, have exactly one parameter (not `ref`, `in`, `out` or `ref readonly`) and live in a `partial` type.
 - Arguments must be classes or `readonly struct`s. Mutable structs would be silently copied into the adapter and ref structs can't be converted to an interface (`IFITQUACKS006`).
 - Overloads of a `[DuckTyped]` method are not supported.
@@ -128,6 +157,7 @@ See [Known limitations](https://linkdotnet.github.io/IfItQuacks/articles/known_l
 | `IFITQUACKS004` | Unsupported `[DuckTyped]` method signature |
 | `IFITQUACKS005` | Unsupported shape member |
 | `IFITQUACKS006` | Unsupported struct argument (mutable struct or ref struct) |
+| `IFITQUACKS007` | The type argument of `Duck.As` must be a `[DuckShape]` interface |
 
 ## Documentation
 

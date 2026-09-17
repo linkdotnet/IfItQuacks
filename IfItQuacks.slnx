@@ -5,6 +5,7 @@
   </Folder>
   <Folder Name="/samples/">
     <File Path="samples/Directory.Build.props" />
+    <Project Path="samples/IfItQuacks.Sample.Conversion/IfItQuacks.Sample.Conversion.csproj" />
     <Project Path="samples/IfItQuacks.Sample.Generics/IfItQuacks.Sample.Generics.csproj" />
     <Project Path="samples/IfItQuacks.Sample.Methods/IfItQuacks.Sample.Methods.csproj" />
     <Project Path="samples/IfItQuacks.Sample.Properties/IfItQuacks.Sample.Properties.csproj" />

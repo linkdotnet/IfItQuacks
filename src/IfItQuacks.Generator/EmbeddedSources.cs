@@ -22,6 +22,17 @@ internal static class EmbeddedSources
             {
             }
 
+            /// <summary>Converts values to <see cref="DuckShapeAttribute"/> interfaces they structurally satisfy.</summary>
+            public static class Duck
+            {
+                /// <summary>Returns <paramref name="value"/> as <typeparamref name="TShape"/>. The call is verified at compile time and
+                /// replaced by a generated adapter, or by a plain cast if the value already implements the shape.</summary>
+                public static TShape As<TShape>(object value) where TShape : class
+                {
+                    throw new DuckShapeMismatchException(value?.GetType() ?? typeof(object), typeof(TShape));
+                }
+            }
+
             /// <summary>Thrown when a duck-typed call reaches the non-intercepted fallback path,
             /// which normally only happens if the argument's shape could not be verified at
             /// compile time (verified mismatches are reported as build errors instead).</summary>
