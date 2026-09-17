@@ -6,6 +6,9 @@ internal static class ShapeMatcher
 {
     public static string? FindMismatch(INamedTypeSymbol shape, INamedTypeSymbol concreteType, Compilation compilation)
     {
+        if (concreteType.DelegateInvokeMethod is { } invoke)
+            return FindDelegateMismatch(shape, invoke, compilation);
+
         foreach (var member in GetShapeMembers(shape).Where(IsRequired))
         {
             var mismatch = FindMemberMismatch(concreteType, member, compilation);
@@ -27,7 +30,16 @@ internal static class ShapeMatcher
     // Members with a default implementation are optional: the adapter forwards them only if the concrete type provides a match.
     public static bool IsRequired(ISymbol member) => member.IsAbstract;
 
-    public static ISymbol? FindCounterpart(ISymbol member, INamedTypeSymbol concreteType, Compilation compilation) => member switch
+    public static ISymbol? FindCounterpart(ISymbol member, INamedTypeSymbol concreteType, Compilation compilation)
+    {
+        // A delegate has no member named like the interface method; its Invoke stands in for it.
+        if (concreteType.DelegateInvokeMethod is { } invoke)
+            return member is IMethodSymbol method && IsDelegateMatch(method, invoke, compilation) ? invoke : null;
+
+        return FindNamedCounterpart(member, concreteType, compilation);
+    }
+
+    private static ISymbol? FindNamedCounterpart(ISymbol member, INamedTypeSymbol concreteType, Compilation compilation) => member switch
     {
         IMethodSymbol method => FindMethod(concreteType, method, compilation),
         IPropertySymbol property => GetAllMembers(concreteType).FirstOrDefault(m => IsPropertyMatch(m, property, compilation)),
@@ -35,6 +47,28 @@ internal static class ShapeMatcher
             .FirstOrDefault(e => e.Name == @event.Name && IsPublicInstance(e) && SymbolEqualityComparer.Default.Equals(e.Type, @event.Type)),
         _ => null,
     };
+
+    // A delegate can stand in for an interface with exactly one required method, like a functional interface.
+    private static string? FindDelegateMismatch(INamedTypeSymbol shape, IMethodSymbol invoke, Compilation compilation)
+    {
+        var required = GetShapeMembers(shape).Where(IsRequired).ToList();
+        if (required.Count != 1 || required[0] is not IMethodSymbol method)
+            return "a delegate can only satisfy an interface with a single method";
+
+        return IsDelegateMatch(method, invoke, compilation)
+            ? null
+            : $"the delegate's signature doesn't match '{method.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}'";
+    }
+
+    private static bool IsDelegateMatch(IMethodSymbol shapeMethod, IMethodSymbol invoke, Compilation compilation)
+    {
+        var returnMatches = shapeMethod.RefKind != RefKind.None
+            ? IsRefMatch(invoke.RefKind, invoke.ReturnType, shapeMethod.RefKind, shapeMethod.ReturnType)
+            : shapeMethod.ReturnsVoid ||
+              (!invoke.ReturnsVoid && invoke.RefKind == RefKind.None && IsAssignable(invoke.ReturnType, shapeMethod.ReturnType, compilation));
+
+        return returnMatches && ParametersMatch(invoke.Parameters, shapeMethod.Parameters, compilation);
+    }
 
     private static bool IsRelevant(ISymbol member)
     {
@@ -165,7 +199,7 @@ internal static class ShapeMatcher
         candidateKind == shapeKind || (shapeKind == RefKind.RefReadOnly && candidateKind == RefKind.Ref);
 
     // Parameters are inputs, so the shape's parameter type has to convert to the candidate's; by-reference parameters stay exact.
-    private static bool ParametersMatch(IReadOnlyList<IParameterSymbol> candidate, IReadOnlyList<IParameterSymbol> shape, Compilation compilation)
+    public static bool ParametersMatch(IReadOnlyList<IParameterSymbol> candidate, IReadOnlyList<IParameterSymbol> shape, Compilation compilation)
     {
         if (candidate.Count != shape.Count) return false;
         for (var i = 0; i < candidate.Count; i++)
@@ -179,7 +213,7 @@ internal static class ShapeMatcher
         return true;
     }
 
-    private static bool IsAssignable(ITypeSymbol source, ITypeSymbol destination, Compilation compilation)
+    public static bool IsAssignable(ITypeSymbol source, ITypeSymbol destination, Compilation compilation)
     {
         if (SymbolEqualityComparer.Default.Equals(source, destination)) return true;
         var conversion = compilation.ClassifyCommonConversion(source, destination);

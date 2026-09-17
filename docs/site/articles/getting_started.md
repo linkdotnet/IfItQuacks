@@ -12,14 +12,6 @@ dotnet add package IfItQuacks
 
 IfItQuacks is a source generator built on top of [interceptors](https://github.com/dotnet/roslyn/blob/main/docs/features/interceptors.md). Interceptors are opt-in per namespace; the package enables its generated namespace automatically, so no project file changes are needed.
 
-Only if you reference the generator as a project (`OutputItemType="Analyzer"`) instead of the NuGet package, add the namespace yourself:
-
-```xml
-<PropertyGroup>
-  <InterceptorsNamespaces>$(InterceptorsNamespaces);IfItQuacks.Generated</InterceptorsNamespaces>
-</PropertyGroup>
-```
-
 ## Building blocks
 
 The generator adds the following `internal` types to the `IfItQuacks` namespace of your project. Because they are internal, several projects in the same solution can use IfItQuacks without type conflicts:
@@ -41,6 +33,7 @@ Any interface works - your own, the framework's (`IDisposable`, `IEnumerable<T>`
 | Indexers | A public indexer with the same accessors, assignable parameter types and a type following the property rules. |
 | Events | A public event with the same name and delegate type. |
 | Default interface members | Optional. If the type has a matching member, it is used; otherwise the default implementation runs. |
+| `static abstract` members and operators | Only for [duck-typed constraints](#static-members-and-operators): a public static member or operator with a matching signature. |
 
 "Assignable" means an implicit identity, reference, boxing, numeric or nullable conversion - just like in an assignment - but no user-defined conversion operators. If several members match, one with exactly the same types wins:
 
@@ -152,6 +145,62 @@ string text = Ops.Unwrap(new Box<string>("quack")); // T = string
 
 Every type parameter of the method has to appear in an interface parameter type, otherwise it can't be inferred ([`IFITQUACKS004`](diagnostics.md#ifitquacks004)). Other parameters may use the inferred type parameters, e.g. `T Add<T>(IContainer<T> container, T fallback)`. Closed generic interfaces like `IContainer<int>` work on non-generic methods as well.
 
+## Delegates and method groups
+
+An interface with a single method is satisfied by any matching delegate, lambda or method group - a functional interface, as in TypeScript or Java:
+
+```csharp
+public interface IFormatter { string Format(int value); }
+
+[DuckTyped]
+public static string Render(IFormatter formatter, int value) => formatter.Format(value);
+
+Func<int, string> hex = value => $"0x{value:X}";
+Ops.Render(hex, 255);                          // a delegate variable
+Ops.Render((int value) => $"{value} EUR", 42);  // a lambda: parameter types have to be explicit
+Ops.Render(Spell, 3);                          // a method group
+IFormatter formatter = Duck.As<IFormatter>(hex);
+```
+
+The delegate's signature has to match the interface's single method by the usual rules (assignable return and parameter types). Interfaces with more than one required member can't be satisfied by a delegate ([`IFITQUACKS001`](diagnostics.md#ifitquacks001)).
+
+It also works the other way round: a `[DuckTyped]` method converts to a delegate over the duck type, so it can be passed around as a function:
+
+```csharp
+Func<Person, string> describe = Ops.Describe;   // Describe takes an INamed
+people.Select(Ops.Describe);
+```
+
+## Static members and operators
+
+Generic math is built on `static abstract` interface members, which no instance can provide. They are duck-typed through the **constraint** instead of a parameter: mark a generic method whose type parameter is constrained to the interface and use it as a normal parameter type.
+
+```csharp
+public interface IAddable<T> where T : IAddable<T>
+{
+    static abstract T Zero { get; }
+    static abstract T operator +(T left, T right);
+}
+
+public static partial class Ops
+{
+    [DuckTyped]
+    public static T Sum<T>(T first, T second) where T : IAddable<T> => T.Zero + first + second;
+}
+
+// Money has + and Zero, but doesn't implement IAddable<Money>.
+Money total = Ops.Sum(new Money(19.99m), new Money(5.01m));
+```
+
+The generated adapter is its own type argument (`Adapter : IAddable<Adapter>`) and forwards the interface's statics and operators to the argument's type, so BCL interfaces work as well:
+
+```csharp
+[DuckTyped]
+public static T Add<T>(T first, T second) where T : System.Numerics.IAdditionOperators<T, T, T> => first + second;
+```
+
+Instance members of the constraint are forwarded too, as long as their signature doesn't use the self type. Every type parameter needs exactly one interface constraint used by a by-value parameter, the method can't also have interface parameters, and all arguments bound to the same type parameter must have the same type ([`IFITQUACKS004`](diagnostics.md#ifitquacks004)).
+
 ## Converting explicitly
 
 Use `Duck.As<TShape>(value)` when the duck-typed value has to outlive a single call - for example to store it in a field, add it to a collection or return it:
@@ -222,3 +271,5 @@ Runnable examples live in [`samples`](https://github.com/linkdotnet/IfItQuacks/t
 | `IfItQuacks.Sample.Conversion` | `Duck.As` for collections and read-only views, identity and `Duck.Unwrap` |
 | `IfItQuacks.Sample.Members` | Events, indexers, `ref` returns and default interface members |
 | `IfItQuacks.Sample.Signatures` | `ref`/`out`/`params` parameters, `private` methods, methods on a struct and the runtime fallback |
+| `IfItQuacks.Sample.Delegates` | Delegates, lambdas and method groups as ducks, and `[DuckTyped]` methods as delegates |
+| `IfItQuacks.Sample.GenericMath` | `static abstract` members and operators through duck-typed constraints |

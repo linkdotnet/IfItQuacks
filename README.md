@@ -100,6 +100,8 @@ Duck.Unwrap(Duck.As<INamed>(person)) is Person;          // true
 - Interface parameters that don't need duck typing (an `ILogger`, say) keep accepting implementations, `null` and default values
 - Generic interfaces (`IContainer<T>`) and generic `[DuckTyped]` methods with inferred type arguments
 - Events, indexers and default interface members
+- Delegates, lambdas and method groups for single-method interfaces - and `[DuckTyped]` methods as delegates
+- `static abstract` members and operators through duck-typed constraints (`where T : IAddable<T>`), generic math included
 - Instance and static methods, `ref`/`out`, `params`, default values and named arguments
 - Zero setup: install the package, no project file changes
 
@@ -108,6 +110,7 @@ Duck.Unwrap(Duck.As<INamed>(person)) is Person;          // true
 - [Getting started](https://linkdotnet.github.io/IfItQuacks/articles/getting_started.html)
 - [How does it work?](https://linkdotnet.github.io/IfItQuacks/articles/concepts.html) - including what gets allocated
 - [Diagnostics](https://linkdotnet.github.io/IfItQuacks/articles/diagnostics.html)
+- [Benchmarks](https://linkdotnet.github.io/IfItQuacks/articles/benchmarks.html)
 - [Known limitations](https://linkdotnet.github.io/IfItQuacks/articles/known_limitations.html)
 
 Runnable examples live in [`samples`](samples).

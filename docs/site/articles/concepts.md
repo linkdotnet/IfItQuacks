@@ -112,6 +112,52 @@ public static global::IDoable Interceptor_2(object value) =>
 
 The argument's static type (`A`) drives structural matching and adapter selection, exactly as for `[DuckTyped]` methods, and the same adapters are shared. If `A` already implements `IDoable`, the interceptor is a plain cast and no adapter is involved.
 
+## Delegates and method groups
+
+A delegate has no member named like the interface's method, so the adapter forwards to its `Invoke`:
+
+```csharp
+internal readonly struct ShapeAdapter_IFormatter_Func_int_string_ : IFormatter, IDuckAdapter
+{
+    private readonly global::System.Func<int, string> _value;
+    string global::IFormatter.Format(int value) => _value.Invoke(value);
+}
+```
+
+Lambdas and method groups have no type of their own, so the generator uses their natural type (`Func<...>`/`Action<...>`), exactly like the compiler does.
+
+A method group can't be intercepted - it isn't a call. Instead the generator adds a concrete overload for the delegate the group converts to, and overload resolution picks it over the generic fallback:
+
+```csharp
+// You write
+Func<Person, string> describe = Ops.Describe;
+
+// The generator emits
+public static string Describe(global::Person named) =>
+    Describe(new global::IfItQuacks.Generated.ShapeAdapter_INamed_Person(named));
+```
+
+## Duck-typed constraints
+
+`static abstract` members can't be reached through an instance, so they are matched through a constraint (`where T : IAddable<T>`). The adapter becomes its own type argument, forwards the statics and operators to the wrapped type and converts back:
+
+```csharp
+internal readonly struct ShapeAdapter_IAddable_Money_Money : IAddable<ShapeAdapter_IAddable_Money_Money>, IDuckAdapter
+{
+    private readonly global::Money _value;
+    public static explicit operator global::Money(ShapeAdapter_IAddable_Money_Money adapter) => adapter._value;
+    public static ShapeAdapter_IAddable_Money_Money Zero => new(global::Money.Zero);
+    public static ShapeAdapter_IAddable_Money_Money operator +(ShapeAdapter_IAddable_Money_Money left, ShapeAdapter_IAddable_Money_Money right) =>
+        new(left._value + right._value);
+}
+
+// and on your type
+public static global::Money Sum(global::Money first, global::Money second) =>
+    (global::Money)(Sum<ShapeAdapter_IAddable_Money_Money>(new(first), new(second)));
+```
+
+Because the adapter is passed as a *constrained type argument* rather than an interface, these calls don't box.
+
 ## Allocations
 
 Nothing here is free, but nothing is hidden either. The generated code is what you would write by hand:

@@ -8,6 +8,11 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 ### Added
 
+- Delegates, lambdas and method groups satisfy an interface with a single method (a functional interface), both as `[DuckTyped]` arguments and through `Duck.As`.
+- A `[DuckTyped]` method converts to a delegate over the duck type (`Func<Person, string> f = Ops.Describe;`, `items.Select(Ops.Describe)`) through a generated overload.
+- `static abstract` members and operators via duck-typed constraints (`where T : IAddable<T>`), including BCL generic math interfaces such as `IAdditionOperators<T, T, T>`. The generated adapter is its own type argument, so these calls don't box.
+- Samples: `IfItQuacks.Sample.Delegates` and `IfItQuacks.Sample.GenericMath`.
+
 - Documentation: a [Benchmarks](docs/site/articles/benchmarks.md) page with measured numbers (BenchmarkDotNet, `MemoryDiagnoser`) for duck-typed calls and for `Duck.As` used as a view instead of a mapper.
 - Samples: `IfItQuacks.Sample.Members` (events, indexers, `ref` returns, default interface members) and `IfItQuacks.Sample.Signatures` (`ref`/`out`/`params` parameters, `private` methods, methods on a struct, runtime fallback).
 

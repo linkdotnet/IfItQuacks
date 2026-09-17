@@ -13,12 +13,12 @@ Only direct calls inside the project that references the generator are intercept
 ```csharp
 Ops.Describe(new Person());              // intercepted
 Describe(new Person());                  // intercepted (implicit this)
+Func<Person, string> f = Ops.Describe;   // a generated overload, see Delegates and method groups
 
-Func<INamed, string> f = Ops.Describe;   // not intercepted: a method group, not a call
-f(duck);                                 // binds to the fallback
-
-// A call from another assembly referencing yours: also the fallback.
+// A call from another assembly referencing yours: the runtime fallback.
 ```
+
+A method group only converts to a delegate whose parameter types are known at that point: `Func<Person, string>` works, `Func<INamed, string>` passes the interface through as before, but a duck-typed conversion inferred from a later step can't be generated.
 
 The fallback is the generated overload that accepts anything and casts at runtime. It works if the value implements the interface and throws `DuckTypeMismatchException` otherwise.
 
@@ -74,11 +74,27 @@ file partial class Ops4 { [DuckTyped] public static string H(INamed n) => n.Name
 public interface IMapper
 {
     U Map<U>();                       // IFITQUACKS005: generic interface method
-    static abstract IMapper Create();  // IFITQUACKS005: static abstract member
+    static abstract IMapper Create();  // IFITQUACKS005: static abstract member on an interface parameter
 }
 ```
 
 Both are only reported for arguments that need an adapter. A type implementing the interface itself is passed through untouched.
+
+`static abstract` members *are* supported through a duck-typed constraint (`where T : IAddable<T>`), because there the adapter is its own type argument. That mode has its own limits:
+
+```csharp
+[DuckTyped] static T Sum<T>(T a, T b) where T : IAddable<T> => a + b;          // works
+Ops.Sum(new Money(1m), 2);                                                     // no: arguments must have the same type
+[DuckTyped] static T Mix<T>(T a, INamed n) where T : IAddable<T> => a;         // IFITQUACKS004: mixing both modes
+[DuckTyped] static T Half<T, U>(T a, U b) where T : IAddable<T> => a;          // IFITQUACKS004: U has no interface constraint
+
+public interface ICombinable<T> where T : ICombinable<T>
+{
+    T Combine(T other);   // IFITQUACKS005: an instance member using the self type
+}
+```
+
+Conversion operators (`static abstract implicit operator`), `checked` operators and static abstract events aren't supported either.
 
 ## Generic `[DuckTyped]` methods
 
@@ -90,6 +106,18 @@ Type arguments are inferred by exact matching against the argument's members - n
 First(new IntBox());                       // T = int
 First(new { Get = 1 });                    // IFITQUACKS001: no anonymous types here
 static T Nested<T>(Box<T> b) => First(b);  // CS0411: Box<T> is still open
+```
+
+## Delegates
+
+A delegate only satisfies an interface with exactly one required member, and that member has to be a method.
+
+```csharp
+Comparison<int> comparison = (l, r) => l - r;
+Duck.As<IComparer<int>>(comparison);        // works
+Duck.As<IComparerShape>((int a, int b) => a - b); // works: the lambda has a natural type
+Duck.As<ITwoMembers>(comparison);           // IFITQUACKS001: a delegate can only satisfy a single-method interface
+Ops.Render((a, b) => a - b, 1);             // CS8917: an untyped lambda has no natural type - write (int a, int b)
 ```
 
 ## Anonymous types

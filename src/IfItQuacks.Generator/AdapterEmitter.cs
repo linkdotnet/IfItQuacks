@@ -37,29 +37,7 @@ internal static class AdapterEmitter
         sb.AppendLine($"        public {adapterName}({valueTypeName} value) => _value = value;");
         sb.AppendLine("        object? global::IfItQuacks.IDuckAdapter.Value => _value;");
 
-        foreach (var member in ShapeMatcher.GetShapeMembers(shape))
-        {
-            var counterpart = ShapeMatcher.FindCounterpart(member, concreteType, compilation);
-            if (counterpart is null)
-                continue;
-
-            var memberReceiver = Qualify(receiver, concreteType, counterpart);
-            switch (member)
-            {
-                case IMethodSymbol method:
-                    EmitMethod(sb, method, (IMethodSymbol)counterpart, memberReceiver);
-                    break;
-                case IPropertySymbol { IsIndexer: true } indexer:
-                    EmitIndexer(sb, indexer, memberReceiver);
-                    break;
-                case IPropertySymbol property:
-                    EmitProperty(sb, property, memberReceiver);
-                    break;
-                case IEventSymbol @event:
-                    EmitEvent(sb, @event, memberReceiver);
-                    break;
-            }
-        }
+        EmitInstanceMembers(sb, shape, concreteType, receiver, compilation, Owner);
 
         EmitIdentityMembers(sb, concreteType);
 
@@ -70,8 +48,37 @@ internal static class AdapterEmitter
         return sb.ToString();
     }
 
+    /// <summary>Emits the interface's instance members as explicit implementations forwarding to <paramref name="receiver"/>.</summary>
+    public static void EmitInstanceMembers(StringBuilder sb, INamedTypeSymbol shape, INamedTypeSymbol concreteType, string receiver,
+        Compilation compilation, Func<ISymbol, string> owner)
+    {
+        foreach (var member in ShapeMatcher.GetShapeMembers(shape))
+        {
+            var counterpart = ShapeMatcher.FindCounterpart(member, concreteType, compilation);
+            if (counterpart is null)
+                continue;
+
+            var memberReceiver = Qualify(receiver, concreteType, counterpart);
+            switch (member)
+            {
+                case IMethodSymbol method:
+                    EmitMethod(sb, method, (IMethodSymbol)counterpart, memberReceiver, owner);
+                    break;
+                case IPropertySymbol { IsIndexer: true } indexer:
+                    EmitIndexer(sb, indexer, memberReceiver, owner);
+                    break;
+                case IPropertySymbol property:
+                    EmitProperty(sb, property, memberReceiver, owner);
+                    break;
+                case IEventSymbol @event:
+                    EmitEvent(sb, @event, memberReceiver, owner);
+                    break;
+            }
+        }
+    }
+
     // Members are implemented explicitly, so interfaces inheriting same-named members (IEnumerable<T>.GetEnumerator) or declaring object members don't clash.
-    private static void EmitMethod(StringBuilder sb, IMethodSymbol method, IMethodSymbol counterpart, string receiver)
+    private static void EmitMethod(StringBuilder sb, IMethodSymbol method, IMethodSymbol counterpart, string receiver, Func<ISymbol, string> owner)
     {
         var parameters = FormatParameters(method.Parameters);
         // Casting to the matched parameter types keeps overload resolution on the member the shape was matched against.
@@ -79,31 +86,31 @@ internal static class AdapterEmitter
             SymbolEqualityComparer.Default.Equals(p.Type, counterpart.Parameters[i].Type)
                 ? Utilities.Argument(p)
                 : $"({counterpart.Parameters[i].Type.ToDisplayString()}){Utilities.Identifier(p.Name)}"));
-        sb.AppendLine($"        {Utilities.RefReturnPrefix(method.RefKind)}{method.ReturnType.ToDisplayString()} {Owner(method)}.{method.Name}({parameters}) => {RefExpressionPrefix(method.RefKind)}{receiver}.{method.Name}({args});");
+        sb.AppendLine($"        {Utilities.RefReturnPrefix(method.RefKind)}{method.ReturnType.ToDisplayString()} {owner(method)}.{method.Name}({parameters}) => {RefExpressionPrefix(method.RefKind)}{receiver}.{counterpart.Name}({args});");
     }
 
-    private static void EmitProperty(StringBuilder sb, IPropertySymbol property, string receiver)
+    private static void EmitProperty(StringBuilder sb, IPropertySymbol property, string receiver, Func<ISymbol, string> owner)
     {
-        sb.Append($"        {Utilities.RefReturnPrefix(property.RefKind)}{property.Type.ToDisplayString()} {Owner(property)}.{property.Name} {{ ");
+        sb.Append($"        {Utilities.RefReturnPrefix(property.RefKind)}{property.Type.ToDisplayString()} {owner(property)}.{property.Name} {{ ");
         if (property.GetMethod is not null) sb.Append($"get => {RefExpressionPrefix(property.RefKind)}{receiver}.{property.Name}; ");
         if (property.SetMethod is { } setter) sb.Append($"{SetterKeyword(setter)} => {receiver}.{property.Name} = value; ");
         sb.AppendLine("}");
     }
 
-    private static void EmitIndexer(StringBuilder sb, IPropertySymbol indexer, string receiver)
+    private static void EmitIndexer(StringBuilder sb, IPropertySymbol indexer, string receiver, Func<ISymbol, string> owner)
     {
         var args = string.Join(", ", indexer.Parameters.Select(Utilities.Argument));
-        sb.Append($"        {Utilities.RefReturnPrefix(indexer.RefKind)}{indexer.Type.ToDisplayString()} {Owner(indexer)}.this[{FormatParameters(indexer.Parameters)}] {{ ");
+        sb.Append($"        {Utilities.RefReturnPrefix(indexer.RefKind)}{indexer.Type.ToDisplayString()} {owner(indexer)}.this[{FormatParameters(indexer.Parameters)}] {{ ");
         if (indexer.GetMethod is not null) sb.Append($"get => {RefExpressionPrefix(indexer.RefKind)}{receiver}[{args}]; ");
         if (indexer.SetMethod is { } setter) sb.Append($"{SetterKeyword(setter)} => {receiver}[{args}] = value; ");
         sb.AppendLine("}");
     }
 
-    private static void EmitEvent(StringBuilder sb, IEventSymbol @event, string receiver) =>
-        sb.AppendLine($"        event {@event.Type.ToDisplayString()} {Owner(@event)}.{@event.Name} {{ add => {receiver}.{@event.Name} += value; remove => {receiver}.{@event.Name} -= value; }}");
+    private static void EmitEvent(StringBuilder sb, IEventSymbol @event, string receiver, Func<ISymbol, string> owner) =>
+        sb.AppendLine($"        event {@event.Type.ToDisplayString()} {owner(@event)}.{@event.Name} {{ add => {receiver}.{@event.Name} += value; remove => {receiver}.{@event.Name} -= value; }}");
 
     // Adapters are boxed as the shape, so without forwarding two views of the same instance would neither be equal nor hash alike.
-    private static void EmitIdentityMembers(StringBuilder sb, INamedTypeSymbol concreteType)
+    public static void EmitIdentityMembers(StringBuilder sb, INamedTypeSymbol concreteType)
     {
         var isReference = concreteType.IsReferenceType;
         sb.AppendLine("        public override bool Equals(object? obj) => global::System.Object.Equals(_value, global::IfItQuacks.Duck.Unwrap(obj));");
@@ -130,7 +137,7 @@ internal static class AdapterEmitter
 
     private static string RefExpressionPrefix(RefKind kind) => kind == RefKind.None ? "" : "ref ";
 
-    private static string Owner(ISymbol member) => member.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+    public static string Owner(ISymbol member) => member.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
     private static string AnonymousWitness(INamedTypeSymbol anonymousType) =>
         "new { " + string.Join(", ", anonymousType.GetMembers().OfType<IPropertySymbol>().Select(p =>

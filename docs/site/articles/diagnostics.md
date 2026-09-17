@@ -38,14 +38,16 @@ Reported when
 
 - the method is an extension method,
 - the containing type (or one of its enclosing types) is generic,
-- the method is overloaded by another `[DuckTyped]` method of the same name in the same type, or
-- a type parameter of a generic method is not used by any interface parameter (it can't be inferred).
+- the method is overloaded by another `[DuckTyped]` method of the same name in the same type,
+- the containing type is an interface or a `file`-local type,
+- a type parameter of a generic method is not used by any interface parameter (it can't be inferred), or
+- the method mixes interface parameters with [duck-typed constraints](getting_started.md#static-members-and-operators), or not all of its type parameters have a single interface constraint used by a parameter.
 
 ## IFITQUACKS005
 
 **Unsupported interface member**
 
-The interface contains a member an adapter can't implement: a generic method (`U Map<U>()`) or a `static abstract` member. It is reported on every argument that would need an adapter; types implementing the interface are fine.
+The interface contains a member an adapter can't implement: a generic method (`U Map<U>()`), or a `static abstract` member outside a [duck-typed constraint](getting_started.md#static-members-and-operators). For a duck-typed constraint it is reported for an unsupported operator and for instance members whose signature uses the self type. It is reported on every argument that would need an adapter; types implementing the interface are fine.
 
 ```csharp
 public interface IMapper { U Map<U>(); }
