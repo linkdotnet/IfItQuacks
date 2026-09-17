@@ -10,3 +10,4 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 - `[DuckShape]` and `[DuckTyped]` attributes for compile-time checked structural typing via generated adapters and interceptors.
 - Diagnostics `IFITQUACKS001` - `IFITQUACKS006`.
+- Generic `[DuckShape]` interfaces and generic `[DuckTyped]` methods, with type arguments inferred per argument type.

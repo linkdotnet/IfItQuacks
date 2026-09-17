@@ -72,10 +72,18 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
 
         var parameterType = method.Parameters[0].Type;
         if (parameterType is not INamedTypeSymbol { TypeKind: TypeKind.Interface } shapeType ||
-            !shapeType.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == DuckShapeAttributeName))
+            !shapeType.OriginalDefinition.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == DuckShapeAttributeName))
         {
             diagnostics.Add(Diagnostic.Create(Diagnostics.ParameterNotShape, location, method.Name,
                 parameterType.ToDisplayString()));
+            return new DuckTypedMethodModel(method, null, diagnostics.ToImmutable());
+        }
+
+        var unusedTypeParameter = method.TypeParameters.FirstOrDefault(tp => !ContainsTypeParameter(shapeType, tp));
+        if (unusedTypeParameter is not null)
+        {
+            diagnostics.Add(Diagnostic.Create(Diagnostics.UnsupportedSignature, location, method.Name,
+                $"its type parameter '{unusedTypeParameter.Name}' is not used by its parameter"));
             return new DuckTypedMethodModel(method, null, diagnostics.ToImmutable());
         }
 
@@ -86,9 +94,8 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         ImmutableArray<DuckTypedMethodModel?> models)
     {
         var validMethods = new List<DuckTypedMethodModel>();
-        foreach (var model in models)
+        foreach (var model in Enumerable.OfType<DuckTypedMethodModel>(models))
         {
-            if (model is null) continue;
             foreach (var d in model.Diagnostics) spc.ReportDiagnostic(d);
             if (model.Shape is not null) validMethods.Add(model);
         }
@@ -111,10 +118,11 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             })
             .ToDictionary(g => g.Key, g => g.Single());
 
-        foreach (var model in methodsByName.Values)
+        foreach (var model in methodsByName.Values.Where(m => !m.Method.IsGenericMethod))
             EmitFallbackOverload(spc, model);
 
         var adaptersEmitted = new HashSet<string>();
+        var duckOverloads = new Dictionary<DuckTypedMethodModel, Dictionary<string, DuckOverload>>();
         var adapterSources = new StringBuilder();
         var interceptorSources = new StringBuilder();
         var interceptorCount = 0;
@@ -157,22 +165,57 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
                 if (argType is not INamedTypeSymbol concreteType || concreteType.TypeKind == TypeKind.Error)
                     continue;
 
-                var mismatch = ShapeMatcher.FindMismatch(duckMethod.Shape!, concreteType);
+                var targetMethod = duckMethod.Method;
+                if (targetMethod.IsGenericMethod)
+                {
+                    if (ContainsAnyTypeParameter(concreteType))
+                        continue;
+
+                    var constructed = TypeArgumentInference.TryConstruct(targetMethod, concreteType);
+                    if (constructed is null)
+                    {
+                        spc.ReportDiagnostic(Diagnostic.Create(Diagnostics.ShapeMismatch, argExpr.GetLocation(),
+                            concreteType.ToDisplayString(), duckMethod.Shape!.ToDisplayString(),
+                            ShapeMatcher.FindMismatch(duckMethod.Shape, concreteType)
+                            ?? $"type arguments for '{targetMethod.Name}' could not be inferred"));
+                        continue;
+                    }
+                    targetMethod = constructed;
+                }
+
+                var shape = (INamedTypeSymbol)targetMethod.Parameters[0].Type;
+
+                var mismatch = ShapeMatcher.FindMismatch(shape, concreteType);
                 if (mismatch is not null)
                 {
                     spc.ReportDiagnostic(Diagnostic.Create(Diagnostics.ShapeMismatch, argExpr.GetLocation(),
-                        concreteType.ToDisplayString(), duckMethod.Shape!.ToDisplayString(), mismatch));
+                        concreteType.ToDisplayString(), shape.ToDisplayString(), mismatch));
                     continue;
                 }
 
                 var implementsDirectly = concreteType.AllInterfaces
-                    .Any(i => SymbolEqualityComparer.Default.Equals(i, duckMethod.Shape));
+                    .Any(i => SymbolEqualityComparer.Default.Equals(i, shape));
 
                 var unsupportedStructKind = GetUnsupportedStructKind(concreteType, implementsDirectly);
                 if (unsupportedStructKind is not null)
                 {
                     spc.ReportDiagnostic(Diagnostic.Create(Diagnostics.UnsupportedStructArgument, argExpr.GetLocation(),
-                        concreteType.ToDisplayString(), duckMethod.Shape!.ToDisplayString(), unsupportedStructKind));
+                        concreteType.ToDisplayString(), shape.ToDisplayString(), unsupportedStructKind));
+                    continue;
+                }
+
+                if (targetMethod.IsGenericMethod)
+                {
+                    if (implementsDirectly)
+                        continue;
+
+                    var genericAdapterName = AdapterEmitter.GetAdapterName(shape, concreteType);
+                    if (adaptersEmitted.Add(genericAdapterName))
+                        AdapterEmitter.Emit(adapterSources, shape, concreteType, genericAdapterName);
+
+                    if (!duckOverloads.TryGetValue(duckMethod, out var overloads))
+                        duckOverloads[duckMethod] = overloads = new Dictionary<string, DuckOverload>();
+                    overloads[concreteType.ToDisplayString()] = new DuckOverload(targetMethod, concreteType, genericAdapterName);
                     continue;
                 }
 
@@ -193,6 +236,9 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
                     implementsDirectly, adapterTypeName, interceptorCount);
             }
         }
+
+        foreach (var pair in duckOverloads)
+            EmitDuckOverloads(spc, pair.Key, pair.Value.Values);
 
         interceptorSources.AppendLine("    }");
         interceptorSources.AppendLine("}");
@@ -262,6 +308,66 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         spc.AddSource($"IfItQuacks.Fallback.{containingType.ToDisplayString().Replace('.', '_').Replace('<', '_').Replace('>', '_')}.{method.Name}.g.cs",
             SourceText.From(sb.ToString(), Encoding.UTF8));
     }
+
+    // Interceptors must keep the intercepted signature, so a generic fallback can't return the per-call inferred type; concrete overloads can.
+    private static void EmitDuckOverloads(SourceProductionContext spc, DuckTypedMethodModel model, IEnumerable<DuckOverload> overloads)
+    {
+        var method = model.Method;
+        var containingType = method.ContainingType;
+        var members = new StringBuilder();
+
+        foreach (var overload in overloads)
+        {
+            var accessibility = method.DeclaredAccessibility is Accessibility.Public or Accessibility.Protected or Accessibility.ProtectedOrInternal &&
+                                !IsPubliclyVisible(overload.ConcreteType)
+                ? "internal"
+                : Utilities.AccessibilityKeyword(method.DeclaredAccessibility);
+            var typeArguments = string.Join(", ", overload.Method.TypeArguments.Select(t => t.ToDisplayString()));
+
+            members.AppendLine(
+                $"{accessibility} static {overload.Method.ReturnType.ToDisplayString()} {method.Name}({overload.ConcreteType.ToDisplayString()} value) => " +
+                $"{method.Name}<{typeArguments}>(new global::{GeneratedNamespace}.{overload.AdapterName}(value));");
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine("// <auto-generated/>");
+        sb.AppendLine("#nullable enable");
+        sb.Append(TypeWrapper.WrapInContainingScope(containingType, members.ToString().TrimEnd()));
+
+        spc.AddSource($"IfItQuacks.Overloads.{containingType.ToDisplayString().Replace('.', '_').Replace('<', '_').Replace('>', '_')}.{method.Name}.g.cs",
+            SourceText.From(sb.ToString(), Encoding.UTF8));
+    }
+
+    private static bool IsPubliclyVisible(ITypeSymbol type) => type switch
+    {
+        INamedTypeSymbol named => IsDeclaredPublic(named) && named.TypeArguments.All(IsPubliclyVisible),
+        IArrayTypeSymbol array => IsPubliclyVisible(array.ElementType),
+        _ => true,
+    };
+
+    private static bool IsDeclaredPublic(INamedTypeSymbol type)
+    {
+        for (var t = type; t is not null; t = t.ContainingType)
+            if (t.DeclaredAccessibility != Accessibility.Public)
+                return false;
+        return true;
+    }
+
+    private static bool ContainsTypeParameter(ITypeSymbol type, ITypeParameterSymbol typeParameter) => type switch
+    {
+        ITypeParameterSymbol tp => SymbolEqualityComparer.Default.Equals(tp, typeParameter),
+        INamedTypeSymbol named => named.TypeArguments.Any(t => ContainsTypeParameter(t, typeParameter)),
+        IArrayTypeSymbol array => ContainsTypeParameter(array.ElementType, typeParameter),
+        _ => false,
+    };
+
+    private static bool ContainsAnyTypeParameter(ITypeSymbol type) => type switch
+    {
+        ITypeParameterSymbol => true,
+        INamedTypeSymbol named => named.TypeArguments.Any(ContainsAnyTypeParameter),
+        IArrayTypeSymbol array => ContainsAnyTypeParameter(array.ElementType),
+        _ => false,
+    };
 
     private static void EmitInterceptor(StringBuilder sb, InterceptableLocation location, IMethodSymbol method,
         INamedTypeSymbol concreteType, bool implementsDirectly, string adapterTypeName, int index)

@@ -11,6 +11,9 @@ IfItQuacks is intentionally narrow. The following scenarios are currently not su
 - **Static type only**: matching uses the argument's compile-time type. Passing an open generic type parameter (for example from inside a generic method) can't be verified; the call ends up in the generated fallback, which throws `DuckShapeMismatchException` at runtime.
 - **Same compilation**: only calls inside the project referencing the generator are intercepted. Calls from other assemblies bind to the fallback and throw.
 - **Direct invocations**: only direct calls like `Ops.Foo(x)` or `Foo(x)` are intercepted, not method groups or delegates.
+- **Generic methods**: every type parameter of a generic `[DuckTyped]` method must appear in its parameter type ([`IFITQUACKS004`](diagnostics.md#ifitquacks004)). Type arguments are inferred by exact matching, without variance or implicit conversions. Arguments whose type is still an open generic (e.g. `Box<T>` inside another generic method) are not supported, and the compiler reports `CS0411`.
+- **Generated overloads**: generic `[DuckTyped]` methods are dispatched through generated concrete overloads (see [Generic methods](concepts.md#generic-methods)). They are visible on the containing type, e.g. in IntelliSense.
+- **Generic shape members**: shape members that are generic methods themselves (`U Map<U>()`) are not supported.
 - **Boxing**: the adapter is passed as an interface, so every intercepted call allocates a small object (24 bytes on x64) unless the JIT inlines your method and can stack-allocate it.
 
 ## Structs

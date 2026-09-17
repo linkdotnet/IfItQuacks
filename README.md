@@ -54,6 +54,28 @@ Ops.Foo(new B()); // B.Do
 
 Neither `A` nor `B` implements `IDoable`. The generator verifies at compile time that both have a matching `Do` method and redirects each call through a small generated adapter. There is no reflection and no `dynamic`.
 
+Generic shapes and generic methods work too - the type arguments are inferred per call:
+
+```csharp
+[DuckShape]
+public interface IContainer<T>
+{
+    T Get();
+}
+
+public class IntBox { public int Get() => 42; }
+public class Box<T>(T value) { public T Get() => value; }
+
+public static partial class Ops
+{
+    [DuckTyped]
+    public static T Unwrap<T>(IContainer<T> container) => container.Get();
+}
+
+int number = Ops.Unwrap(new IntBox());             // 42
+string text = Ops.Unwrap(new Box<string>("quack")); // quack
+```
+
 ## What does it solve?
 
 Sometimes you want to treat unrelated types uniformly - types from third-party libraries you can't modify, generated code, or simply types that happen to share members - without writing wrapper classes by hand. Languages like Go and TypeScript offer structural typing out of the box; IfItQuacks brings a compile-time checked flavor of it to C#:
@@ -71,6 +93,7 @@ IfItQuacks is intentionally narrow. Current limitations:
 - Overloads of a `[DuckTyped]` method are not supported.
 - Members are matched by exact name, return type, parameter types and ref-kinds - no variance or implicit conversions.
 - Only calls within the compilation that references the generator are intercepted.
+- Every type parameter of a generic `[DuckTyped]` method must appear in its parameter type. Shape members that are generic methods themselves are not supported.
 - The argument's type must be known at compile time. Calls with an open generic type parameter hit the generated fallback, which throws `DuckShapeMismatchException`.
 
 See [Known limitations](https://linkdotnet.github.io/IfItQuacks/articles/known_limitations.html) for details.

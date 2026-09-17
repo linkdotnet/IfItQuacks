@@ -71,4 +71,36 @@ Greeter.Greet(new Person { Name = "Steven" }); // Hello, Steven!
 
 Types that already implement the interface are passed through unchanged.
 
-A runnable example lives in [`samples/IfItQuacks.Sample`](https://github.com/linkdotnet/IfItQuacks/tree/main/samples/IfItQuacks.Sample).
+## Generic shapes
+
+Shapes can be generic, and `[DuckTyped]` methods can be generic too. The type arguments are inferred from the argument's members:
+
+```csharp
+[DuckShape]
+public interface IContainer<T>
+{
+    T Get();
+}
+
+public class IntBox { public int Get() => 42; }
+public class Box<T>(T value) { public T Get() => value; }
+
+public static partial class Ops
+{
+    [DuckTyped]
+    public static T Unwrap<T>(IContainer<T> container) => container.Get();
+}
+
+int number = Ops.Unwrap(new IntBox());             // T = int
+string text = Ops.Unwrap(new Box<string>("quack")); // T = string
+```
+
+Every type parameter of the method has to appear in the parameter type, otherwise it can't be inferred ([`IFITQUACKS004`](diagnostics.md#ifitquacks004)). Closed generic shapes like `IContainer<int>` work on non-generic methods as well.
+
+Runnable examples live in [`samples`](https://github.com/linkdotnet/IfItQuacks/tree/main/samples), one project per showcase:
+
+| Project | Shows |
+|---|---|
+| `IfItQuacks.Sample.Methods` | Duck typing unrelated classes via a method shape |
+| `IfItQuacks.Sample.Properties` | Read-write property shapes |
+| `IfItQuacks.Sample.Generics` | Generic shapes and generic `[DuckTyped]` methods |

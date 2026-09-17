@@ -10,7 +10,7 @@ All diagnostics are reported as errors in the `IfItQuacks` category.
 
 **Argument does not structurally satisfy duck shape**
 
-The argument's type is missing a member of the shape, or a member has a different signature or no public getter/setter.
+The argument's type is missing a member of the shape, or a member has a different signature or no public getter/setter. For generic `[DuckTyped]` methods this is also reported when the type arguments can't be inferred from the argument. The compiler reports `CS0411` in addition, because no generic fallback overload exists for these methods.
 
 ```csharp
 public class Rock { }
@@ -34,7 +34,7 @@ The parameter of a `[DuckTyped]` method is not an interface, or the interface is
 
 **Unsupported [DuckTyped] method signature**
 
-Reported when the method is an instance method, doesn't have exactly one parameter, the parameter is declared `ref`, `in`, `out` or `ref readonly`, or the method is overloaded by another `[DuckTyped]` method of the same name.
+Reported when the method is an instance method, doesn't have exactly one parameter, the parameter is declared `ref`, `in`, `out` or `ref readonly`, the method is overloaded by another `[DuckTyped]` method of the same name, or a type parameter of a generic method is not used by its parameter (it can't be inferred).
 
 ## IFITQUACKS005
 

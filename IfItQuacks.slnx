@@ -4,7 +4,10 @@
     <File Path="README.md" />
   </Folder>
   <Folder Name="/samples/">
-    <Project Path="samples/IfItQuacks.Sample/IfItQuacks.Sample.csproj" />
+    <File Path="samples/Directory.Build.props" />
+    <Project Path="samples/IfItQuacks.Sample.Generics/IfItQuacks.Sample.Generics.csproj" />
+    <Project Path="samples/IfItQuacks.Sample.Methods/IfItQuacks.Sample.Methods.csproj" />
+    <Project Path="samples/IfItQuacks.Sample.Properties/IfItQuacks.Sample.Properties.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/IfItQuacks.Generator/IfItQuacks.Generator.csproj" />
