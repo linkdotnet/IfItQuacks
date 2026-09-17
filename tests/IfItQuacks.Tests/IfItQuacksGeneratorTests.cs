@@ -125,8 +125,92 @@ public class IfItQuacksGeneratorTests
         Assert.Equal("Hello, STEVEN", result);
     }
 
+    [Theory]
+    [InlineData("ref")]
+    [InlineData("in")]
+    [InlineData("out")]
+    [InlineData("ref readonly")]
+    public void ByReferenceParameter_ReportsIfItQuacks004(string modifier)
+    {
+        var source = $$"""
+            using IfItQuacks;
+
+            [DuckShape]
+            public interface IDoable { void Do(); }
+
+            public static partial class Ops
+            {
+                [DuckTyped]
+                public static void Foo({{modifier}} IDoable a) => throw null!;
+            }
+            """;
+
+        var (_, diagnostics) = GeneratorTestHelper.RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "IFITQUACKS004");
+    }
+
+    [Theory]
+    [InlineData("public struct Counter")]
+    [InlineData("public ref struct Counter")]
+    public void MutableOrRefStructArgument_ReportsIfItQuacks006(string declaration)
+    {
+        var source = $$"""
+            using IfItQuacks;
+
+            [DuckShape]
+            public interface ICounter { void Increment(); int Count { get; } }
+
+            {{declaration}} { public int Count { get; private set; } public void Increment() => Count++; }
+
+            public static partial class Ops
+            {
+                [DuckTyped]
+                public static int Bump(ICounter c) { c.Increment(); return c.Count; }
+            }
+
+            public static class Entry
+            {
+                public static int Run() => Ops.Bump(new Counter());
+            }
+            """;
+
+        var (_, diagnostics) = GeneratorTestHelper.RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "IFITQUACKS006");
+    }
+
     [Fact]
-    public void StructuralMismatch_ReportsDuck001()
+    public void ReadonlyStructArgument_DuckTypes()
+    {
+        const string source = """
+            using IfItQuacks;
+
+            [DuckShape]
+            public interface IGreeter { string Greet(string name); }
+
+            public readonly struct Greeter { public string Greet(string name) => "Hello, " + name; }
+
+            public static partial class Ops
+            {
+                [DuckTyped]
+                public static string Welcome(IGreeter g) => g.Greet("Steven");
+            }
+
+            public static class Entry
+            {
+                public static string Run() => Ops.Welcome(new Greeter());
+            }
+            """;
+
+        var (compilation, diagnostics) = GeneratorTestHelper.RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var assembly = GeneratorTestHelper.EmitAndLoad(compilation);
+        var result = assembly.GetType("Entry")!.GetMethod("Run")!.Invoke(null, null);
+        Assert.Equal("Hello, Steven", result);
+    }
+
+    [Fact]
+    public void StructuralMismatch_ReportsIfItQuacks001()
     {
         const string source = """
             using IfItQuacks;
@@ -149,11 +233,11 @@ public class IfItQuacksGeneratorTests
             """;
 
         var (_, diagnostics) = GeneratorTestHelper.RunGenerator(source);
-        Assert.Contains(diagnostics, d => d.Id == "DUCK001");
+        Assert.Contains(diagnostics, d => d.Id == "IFITQUACKS001");
     }
 
     [Fact]
-    public void NonPartialContainingType_ReportsDuck002()
+    public void NonPartialContainingType_ReportsIfItQuacks002()
     {
         const string source = """
             using IfItQuacks;
@@ -169,11 +253,11 @@ public class IfItQuacksGeneratorTests
             """;
 
         var (_, diagnostics) = GeneratorTestHelper.RunGenerator(source);
-        Assert.Contains(diagnostics, d => d.Id == "DUCK002");
+        Assert.Contains(diagnostics, d => d.Id == "IFITQUACKS002");
     }
 
     [Fact]
-    public void NonShapeParameter_ReportsDuck003()
+    public void NonShapeParameter_ReportsIfItQuacks003()
     {
         const string source = """
             using IfItQuacks;
@@ -188,7 +272,7 @@ public class IfItQuacksGeneratorTests
             """;
 
         var (_, diagnostics) = GeneratorTestHelper.RunGenerator(source);
-        Assert.Contains(diagnostics, d => d.Id == "DUCK003");
+        Assert.Contains(diagnostics, d => d.Id == "IFITQUACKS003");
     }
 
     [Fact]

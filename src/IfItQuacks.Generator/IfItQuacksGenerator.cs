@@ -62,6 +62,14 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             return new DuckTypedMethodModel(method, null, diagnostics.ToImmutable());
         }
 
+        if (method.Parameters[0].RefKind != RefKind.None)
+        {
+            var modifiers = ((MethodDeclarationSyntax)ctx.TargetNode).ParameterList.Parameters[0].Modifiers;
+            diagnostics.Add(Diagnostic.Create(Diagnostics.UnsupportedSignature, location, method.Name,
+                $"its parameter is declared '{modifiers}'"));
+            return new DuckTypedMethodModel(method, null, diagnostics.ToImmutable());
+        }
+
         var parameterType = method.Parameters[0].Type;
         if (parameterType is not INamedTypeSymbol { TypeKind: TypeKind.Interface } shapeType ||
             !shapeType.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == DuckShapeAttributeName))
@@ -157,12 +165,20 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
                     continue;
                 }
 
+                var implementsDirectly = concreteType.AllInterfaces
+                    .Any(i => SymbolEqualityComparer.Default.Equals(i, duckMethod.Shape));
+
+                var unsupportedStructKind = GetUnsupportedStructKind(concreteType, implementsDirectly);
+                if (unsupportedStructKind is not null)
+                {
+                    spc.ReportDiagnostic(Diagnostic.Create(Diagnostics.UnsupportedStructArgument, argExpr.GetLocation(),
+                        concreteType.ToDisplayString(), duckMethod.Shape!.ToDisplayString(), unsupportedStructKind));
+                    continue;
+                }
+
                 var interceptableLocation = semanticModel.GetInterceptableLocation(invocation, spc.CancellationToken);
                 if (interceptableLocation is null)
                     continue;
-
-                var implementsDirectly = concreteType.AllInterfaces
-                    .Any(i => SymbolEqualityComparer.Default.Equals(i, duckMethod.Shape));
 
                 var adapterTypeName = "";
                 if (!implementsDirectly)
@@ -197,6 +213,18 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             full.AppendLine("}");
             spc.AddSource("IfItQuacks.Adapters.g.cs", SourceText.From(full.ToString(), Encoding.UTF8));
         }
+    }
+
+    // A struct implementing the shape is boxed by the compiler itself, so only adapter-wrapped mutable structs would silently lose mutations.
+    private static string? GetUnsupportedStructKind(INamedTypeSymbol type, bool implementsDirectly)
+    {
+        if (type.IsRefLikeType)
+            return "ref structs cannot be converted to an interface";
+
+        if (type.IsValueType && !type.IsReadOnly && !implementsDirectly)
+            return "mutable structs are copied into an adapter, so mutations made through the shape would be lost";
+
+        return null;
     }
 
     private static string? GetInvokedName(InvocationExpressionSyntax invocation) => invocation.Expression switch

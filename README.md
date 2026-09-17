@@ -58,7 +58,7 @@ Neither `A` nor `B` implements `IDoable`. The generator verifies at compile time
 
 Sometimes you want to treat unrelated types uniformly - types from third-party libraries you can't modify, generated code, or simply types that happen to share members - without writing wrapper classes by hand. Languages like Go and TypeScript offer structural typing out of the box; IfItQuacks brings a compile-time checked flavor of it to C#:
 
-- **Type safe**: a type that doesn't fit the shape is a build error (`DUCK001`), not a runtime surprise.
+- **Type safe**: a type that doesn't fit the shape is a build error (`IFITQUACKS001`), not a runtime surprise.
 - **Zero reflection**: adapters and interceptors are plain generated C#.
 - **Works with existing types**: if a type already implements the interface it is passed through as-is.
 
@@ -66,7 +66,8 @@ Sometimes you want to treat unrelated types uniformly - types from third-party l
 
 IfItQuacks is intentionally narrow. Current limitations:
 
-- `[DuckTyped]` methods must be `static`, have exactly one parameter and live in a `partial` type.
+- `[DuckTyped]` methods must be `static`, have exactly one parameter (not `ref`, `in`, `out` or `ref readonly`) and live in a `partial` type.
+- Arguments must be classes or `readonly struct`s. Mutable structs would be silently copied into the adapter and ref structs can't be converted to an interface (`IFITQUACKS006`).
 - Overloads of a `[DuckTyped]` method are not supported.
 - Members are matched by exact name, return type, parameter types and ref-kinds - no variance or implicit conversions.
 - Only calls within the compilation that references the generator are intercepted.
@@ -78,11 +79,12 @@ See [Known limitations](https://linkdotnet.github.io/IfItQuacks/articles/known_l
 
 | Id | Description |
 |---|---|
-| `DUCK001` | Argument does not structurally satisfy the duck shape |
-| `DUCK002` | The containing type of a `[DuckTyped]` method must be `partial` |
-| `DUCK003` | The parameter of a `[DuckTyped]` method must be a `[DuckShape]` interface |
-| `DUCK004` | Unsupported `[DuckTyped]` method signature |
-| `DUCK005` | Unsupported shape member |
+| `IFITQUACKS001` | Argument does not structurally satisfy the duck shape |
+| `IFITQUACKS002` | The containing type of a `[DuckTyped]` method must be `partial` |
+| `IFITQUACKS003` | The parameter of a `[DuckTyped]` method must be a `[DuckShape]` interface |
+| `IFITQUACKS004` | Unsupported `[DuckTyped]` method signature |
+| `IFITQUACKS005` | Unsupported shape member |
+| `IFITQUACKS006` | Unsupported struct argument (mutable struct or ref struct) |
 
 ## Documentation
 

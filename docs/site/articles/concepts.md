@@ -26,7 +26,7 @@ The generator scans the compilation for invocations of the `[DuckTyped]` method 
 - **Methods**: same name, return type, parameter count, parameter types and ref-kinds (`ref`, `out`, `in`).
 - **Properties**: same name and type, with a public getter and/or setter if the shape declares one.
 
-Members inherited from base classes count. If something is missing, [`DUCK001`](diagnostics.md#duck001) is reported on the argument.
+Members inherited from base classes count. If something is missing, [`IFITQUACKS001`](diagnostics.md#ifitquacks001) is reported on the argument.
 
 ## 3. Adapter
 
@@ -57,4 +57,6 @@ public static void Interceptor_1(A value)
 
 The compiler replaces the call to the fallback overload with the interceptor, which wraps the argument and calls your original method. The cast to the interface makes sure overload resolution picks your method and not the generic fallback.
 
-Because the adapter is a struct that is passed as an interface, each call boxes the adapter.
+Because the adapter is passed as an interface, each call boxes the adapter. The generated members are trivial forwarders, so they are not marked with `[MethodImpl(MethodImplOptions.AggressiveInlining)]`: calls through an interface can't be inlined by that attribute, and benchmarks showed no difference.
+
+Since the adapter holds a copy of the argument, only classes and `readonly struct`s are supported. See [Known limitations](known_limitations.md#structs) for details.

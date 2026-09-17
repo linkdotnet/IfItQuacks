@@ -67,7 +67,7 @@ public class Person
 Greeter.Greet(new Person { Name = "Steven" }); // Hello, Steven!
 ```
 
-`Person` does not implement `INameable`. If it didn't have a public `Name` property with a getter and setter, the build fails with [`DUCK001`](diagnostics.md#duck001).
+`Person` does not implement `INameable`. If it didn't have a public `Name` property with a getter and setter, the build fails with [`IFITQUACKS001`](diagnostics.md#ifitquacks001).
 
 Types that already implement the interface are passed through unchanged.
 
