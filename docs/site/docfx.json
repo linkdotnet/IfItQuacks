@@ -1,0 +1,37 @@
+{
+  "build": {
+    "content": [
+      {
+        "files": [
+          "articles/**.md",
+          "articles/**/toc.yml",
+          "toc.yml",
+          "*.md"
+        ]
+      }
+    ],
+    "resource": [
+      {
+        "files": [
+          "images/**"
+        ]
+      }
+    ],
+    "dest": "_site/",
+    "template": [
+      "default",
+      "modern"
+    ],
+    "globalMetadata": {
+      "_appName": "IfItQuacks",
+      "_appTitle": "IfItQuacks",
+      "_description": "Compile-time checked structural (duck) typing for C# via a Roslyn source generator and interceptors.",
+      "_enableSearch": true,
+      "_appLogoPath": "images/logo.png",
+      "_appFaviconPath": "images/logo.png",
+      "_disableBreadcrumb": true,
+      "_disableFooter": true
+    },
+    "markdownEngineName": "markdig"
+  }
+}

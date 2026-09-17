@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6D3FE8"/>
+      <stop offset="1" stop-color="#3E1E9E"/>
+    </linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFE45C"/>
+      <stop offset="1" stop-color="#FFC21A"/>
+    </linearGradient>
+    <linearGradient id="beak" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFA23A"/>
+      <stop offset="1" stop-color="#F27A12"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="16" y="16" width="480" height="480" rx="108" fill="url(#bg)"/>
+
+  <path d="M64 412 q 32 -18 64 0 t 64 0 t 64 0 t 64 0 t 64 0 t 64 0" stroke="#9A7CF5" stroke-width="12" fill="none" stroke-linecap="round" opacity="0.7"/>
+
+  <path d="M96 300 C 96 230 150 212 214 222 L 300 226 C 360 226 420 244 420 312 C 420 380 360 412 262 412 C 160 412 96 378 96 300 Z" fill="url(#body)"/>
+  <path d="M104 296 C 72 286 58 250 70 222 C 90 244 116 254 140 256 Z" fill="#FFD43B"/>
+
+  <path d="M360 168 C 400 150 444 158 452 180 C 456 196 440 206 420 204 C 400 214 372 212 360 204 Z" fill="url(#beak)"/>
+  <path d="M372 190 C 400 194 428 192 448 186" stroke="#D2600A" stroke-width="4" fill="none" stroke-linecap="round"/>
+
+  <circle cx="300" cy="168" r="92" fill="url(#body)"/>
+
+
+  <circle cx="322" cy="146" r="17" fill="#2A1B4A"/>
+  <circle cx="328" cy="139" r="6" fill="#FFFFFF"/>
+  <ellipse cx="300" cy="196" rx="20" ry="12" fill="#FF8FA3" opacity="0.7"/>
+
+  <path d="M168 292 C 200 262 262 266 286 300 C 262 336 202 338 168 292 Z" fill="#FFB800" opacity="0.9"/>
+
+  <g transform="translate(176 330)">
+    <rect x="0" y="0" width="160" height="58" rx="18" fill="#512BD4"/>
+    <text x="80" y="42" text-anchor="middle" font-family="Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-weight="700" font-size="36" fill="#FFFFFF">&gt;.NET</text>
+  </g>
+</svg>

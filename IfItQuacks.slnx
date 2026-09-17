@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/.text/">
+    <File Path="CHANGELOG.md" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/IfItQuacks.Sample/IfItQuacks.Sample.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/IfItQuacks.Generator/IfItQuacks.Generator.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/IfItQuacks.Tests/IfItQuacks.Tests.csproj" />
+  </Folder>
+</Solution>
