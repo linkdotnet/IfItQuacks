@@ -6,25 +6,26 @@ uid: concepts
 
 IfItQuacks is a Roslyn incremental source generator. For every `[DuckTyped]` method it performs four steps at compile time.
 
+The generator only looks at calls whose name matches a `[DuckTyped]` method or `Duck.As`, and caches its results per call site. Editing a file without such calls doesn't regenerate anything, which keeps the IDE responsive in large solutions.
+
 ## 1. Fallback overload
 
-A call like `Ops.Foo(new A())` would not compile, because `A` is not an `IDoable`. To make it compile, the generator adds a generic overload to the `partial` containing type:
+A call like `Ops.Foo(new A())` would not compile, because `A` is not an `IDoable`. To make it compile, the generator adds a generic overload to the `partial` containing type, with one type parameter per `[DuckShape]` parameter. All other parameters are copied, including ref-kinds and default values:
 
 ```csharp
-public static void Foo<T>(T value)
+// [DuckTyped] public string Meet(INamed first, int times, INamed second)
+[EditorBrowsable(EditorBrowsableState.Never)]
+public string Meet<TDuck0, TDuck2>(TDuck0 first, int times, TDuck2 second)
 {
-    throw new global::IfItQuacks.DuckShapeMismatchException(typeof(T), typeof(IDoable));
+    throw new global::IfItQuacks.DuckShapeMismatchException(typeof(TDuck0), typeof(INamed));
 }
 ```
 
-The call now binds to `Foo<A>`. That overload is never supposed to run - it is replaced in the next steps.
+The call now binds to the generic overload. It is hidden from IntelliSense and never supposed to run - it is replaced in the next steps.
 
 ## 2. Shape matching
 
-The generator scans the compilation for invocations of the `[DuckTyped]` method and checks the static type of each argument against the shape. Every shape member needs a public counterpart:
-
-- **Methods**: same name, return type, parameter count, parameter types and ref-kinds (`ref`, `out`, `in`).
-- **Properties**: same name and type, with a public getter and/or setter if the shape declares one.
+For every call of the `[DuckTyped]` method, the static type of each argument passed to a `[DuckShape]` parameter is checked against that shape. Arguments are matched to parameters by position or by name. Every shape member needs a public counterpart (see [Defining a shape](getting_started.md#defining-a-shape)); members with a default implementation are optional.
 
 Members inherited from base classes count. If something is missing, [`IFITQUACKS001`](diagnostics.md#ifitquacks001) is reported on the argument.
 
@@ -55,7 +56,17 @@ public static void Interceptor_1(A value)
 }
 ```
 
-The compiler replaces the call to the fallback overload with the interceptor, which wraps the argument and calls your original method. The cast to the interface makes sure overload resolution picks your method and not the generic fallback.
+The compiler replaces the call to the fallback overload with the interceptor, which wraps each duck-typed argument and calls your original method. The cast to the interface makes sure overload resolution picks your method and not the generic fallback.
+
+For instance methods the interceptor takes the receiver as its first parameter and forwards the remaining arguments as they are:
+
+```csharp
+[InterceptsLocation(...)]
+public static string Interceptor_2(this global::Greeter @this, Person first, Pet second, string greeting)
+{
+    return @this.Greet((global::INamed)(new ShapeAdapter_INamed_Person(first)), (global::INamed)(new ShapeAdapter_INamed_Pet(second)), greeting);
+}
+```
 
 Because the adapter is passed as an interface, each call boxes the adapter (see [Allocations](#allocations)). The generated members are trivial forwarders, so they are not marked with `[MethodImpl(MethodImplOptions.AggressiveInlining)]`: calls through an interface can't be inlined by that attribute, and benchmarks showed no difference.
 
@@ -94,7 +105,7 @@ Numbers were measured with `GC.GetAllocatedBytesForCurrentThread`. The JIT may e
 
 A generic `[DuckTyped]` method like `T Unwrap<T>(IContainer<T> c)` can't use the fallback and interceptor from above. An interceptor has to keep the signature of the call it replaces, and a generic fallback `Unwrap<TArg>(TArg value)` can't return `int` for one call and `string` for another.
 
-Instead, the generator infers the method's type arguments per argument type by matching the shape's members against the argument's members, e.g. `int Get()` against `T Get()` gives `T = int`. It then emits one adapter per closed shape (`IContainer<int>`, `IContainer<string>`, ...) and one concrete overload per argument type:
+Instead, the generator infers the method's type arguments per argument type by matching the shape's members against the argument's members, e.g. `int Get()` against `T Get()` gives `T = int`. It then emits one adapter per closed shape (`IContainer<int>`, `IContainer<string>`, ...) and one concrete overload per combination of argument types. The overloads are hidden from IntelliSense:
 
 ```csharp
 public static partial class Ops
@@ -107,6 +118,6 @@ public static partial class Ops
 }
 ```
 
-The call `Ops.Unwrap(new IntBox())` binds to the concrete overload, which has the correct return type. Types that already implement the closed shape bind to your method directly, so no overload is generated for them. If the argument's type isn't publicly visible, the overload is generated as `internal`.
+The call `Ops.Unwrap(new IntBox())` binds to the concrete overload, which has the correct return type. Other parameters are substituted as well, so `T Add<T>(IContainer<T> c, T fallback)` gets `int Add(IntBox c, int fallback)`. If every duck-typed argument already implements its closed shape, the call binds to your method directly and no overload is generated. If the argument's type isn't publicly visible, the overload is generated as `internal`.
 
 A non-generic method with a closed generic shape, e.g. `int Sum(IContainer<int> c)`, uses the regular fallback and interceptor.

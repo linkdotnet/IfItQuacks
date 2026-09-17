@@ -22,8 +22,8 @@ internal static class Diagnostics
 
     public static readonly DiagnosticDescriptor ParameterNotShape = new(
         id: "IFITQUACKS003",
-        title: "Duck-typed parameter must be a [DuckShape] interface",
-        messageFormat: "Method '{0}' is marked [DuckTyped] but its parameter type '{1}' is not an interface marked [DuckShape]",
+        title: "Duck-typed method needs a [DuckShape] parameter",
+        messageFormat: "Method '{0}' is marked [DuckTyped] but none of its parameters is an interface marked [DuckShape]",
         category: "IfItQuacks",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -31,7 +31,7 @@ internal static class Diagnostics
     public static readonly DiagnosticDescriptor UnsupportedSignature = new(
         id: "IFITQUACKS004",
         title: "Unsupported [DuckTyped] method signature",
-        messageFormat: "Method '{0}' is marked [DuckTyped] but {1}. [DuckTyped] methods currently support exactly one parameter, of a [DuckShape] interface type.",
+        messageFormat: "Method '{0}' is marked [DuckTyped] but {1}",
         category: "IfItQuacks",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -39,7 +39,7 @@ internal static class Diagnostics
     public static readonly DiagnosticDescriptor UnsupportedShapeMember = new(
         id: "IFITQUACKS005",
         title: "Unsupported shape member",
-        messageFormat: "Shape '{0}' member '{1}' is not supported (only ordinary instance methods and properties are)",
+        messageFormat: "Shape '{0}' member '{1}' is not supported: generic methods, ref returns and static abstract members can't be adapted",
         category: "IfItQuacks",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);

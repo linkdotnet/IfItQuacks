@@ -26,21 +26,35 @@ The generator adds a fallback overload to the containing type, so it (and every 
 
 ## IFITQUACKS003
 
-**Duck-typed parameter must be a [DuckShape] interface**
+**Duck-typed method needs a [DuckShape] parameter**
 
-The parameter of a `[DuckTyped]` method is not an interface, or the interface is not decorated with `[DuckShape]`.
+None of the parameters of a `[DuckTyped]` method is an interface decorated with `[DuckShape]`.
 
 ## IFITQUACKS004
 
 **Unsupported [DuckTyped] method signature**
 
-Reported when the method is an instance method, doesn't have exactly one parameter, the parameter is declared `ref`, `in`, `out` or `ref readonly`, the method is overloaded by another `[DuckTyped]` method of the same name, or a type parameter of a generic method is not used by its parameter (it can't be inferred).
+Reported when
+
+- a `[DuckShape]` parameter is declared `ref`, `in`, `out` or `ref readonly`,
+- the method is an extension method, or an instance method of a struct,
+- the method is `private` or `protected`, so the generated interceptors can't call it,
+- the containing type (or one of its enclosing types) is generic,
+- the method is overloaded by another `[DuckTyped]` method of the same name in the same type, or
+- a type parameter of a generic method is not used by any `[DuckShape]` parameter (it can't be inferred).
 
 ## IFITQUACKS005
 
 **Unsupported shape member**
 
-Reserved for shape members that can't be adapted. Only ordinary instance methods and properties are supported.
+The shape contains a member the adapter can't implement: a generic method (`U Map<U>()`), a member returning by `ref`, or a `static abstract` member. It is reported on every argument passed to that shape.
+
+```csharp
+[DuckShape]
+public interface IMapper { U Map<U>(); }
+
+Ops.Run(new Mapper()); // error IFITQUACKS005
+```
 
 ## IFITQUACKS006
 

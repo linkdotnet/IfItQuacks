@@ -10,7 +10,7 @@ internal static class EmbeddedSources
             /// <summary>Marks an interface as a structural "shape" contract that other,
             /// unrelated types may satisfy without declaring or implementing it.</summary>
             [System.AttributeUsage(System.AttributeTargets.Interface)]
-            public sealed class DuckShapeAttribute : System.Attribute
+            internal sealed class DuckShapeAttribute : System.Attribute
             {
             }
 
@@ -18,12 +18,12 @@ internal static class EmbeddedSources
             /// structurally matches the parameter's <see cref="DuckShapeAttribute"/> interface,
             /// resolved and dispatched at compile time via generated interceptors.</summary>
             [System.AttributeUsage(System.AttributeTargets.Method)]
-            public sealed class DuckTypedAttribute : System.Attribute
+            internal sealed class DuckTypedAttribute : System.Attribute
             {
             }
 
             /// <summary>Converts values to <see cref="DuckShapeAttribute"/> interfaces they structurally satisfy.</summary>
-            public static class Duck
+            internal static class Duck
             {
                 /// <summary>Returns <paramref name="value"/> as <typeparamref name="TShape"/>. The call is verified at compile time and
                 /// replaced by a generated adapter, or by a plain cast if the value already implements the shape.</summary>
@@ -36,7 +36,7 @@ internal static class EmbeddedSources
             /// <summary>Thrown when a duck-typed call reaches the non-intercepted fallback path,
             /// which normally only happens if the argument's shape could not be verified at
             /// compile time (verified mismatches are reported as build errors instead).</summary>
-            public sealed class DuckShapeMismatchException : System.Exception
+            internal sealed class DuckShapeMismatchException : System.Exception
             {
                 public DuckShapeMismatchException(System.Type actualType, System.Type shapeType)
                     : base($"Type '{actualType}' does not structurally satisfy shape '{shapeType}'.")

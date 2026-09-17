@@ -15,15 +15,10 @@ internal static class GeneratorTestHelper
     private static readonly CSharpParseOptions ParseOptions = new CSharpParseOptions(LanguageVersion.Preview)
         .WithFeatures([new KeyValuePair<string, string>("InterceptorsPreviewNamespaces", "IfItQuacks.Generated")]);
 
-    public static (Compilation Compilation, ImmutableArray<Diagnostic> Diagnostics) RunGenerator(string source, OutputKind outputKind = OutputKind.DynamicallyLinkedLibrary)
+    public static (Compilation Compilation, ImmutableArray<Diagnostic> Diagnostics) RunGenerator(string source, OutputKind outputKind = OutputKind.DynamicallyLinkedLibrary,
+        IEnumerable<MetadataReference>? additionalReferences = null)
     {
-        var syntaxTree = CSharpSyntaxTree.ParseText(source, ParseOptions);
-
-        var compilation = CSharpCompilation.Create(
-            assemblyName: "IfItQuacks.Tests.Generated." + Guid.NewGuid().ToString("N"),
-            syntaxTrees: [syntaxTree],
-            references: References,
-            options: new CSharpCompilationOptions(outputKind, allowUnsafe: true));
+        var compilation = CreateCompilation(outputKind, additionalReferences, source);
 
         var generator = new IfItQuacksGenerator();
         GeneratorDriver driver = CSharpGeneratorDriver.Create([generator.AsSourceGenerator()], parseOptions: ParseOptions);
@@ -37,6 +32,21 @@ internal static class GeneratorTestHelper
 
         return (outputCompilation, allDiagnostics);
     }
+
+    public static CSharpCompilation CreateCompilation(OutputKind outputKind, IEnumerable<MetadataReference>? additionalReferences, params string[] sources) =>
+        CSharpCompilation.Create(
+            assemblyName: "IfItQuacks.Tests.Generated." + Guid.NewGuid().ToString("N"),
+            syntaxTrees: sources.Select(source => CSharpSyntaxTree.ParseText(source, ParseOptions)),
+            references: References.Concat(additionalReferences ?? []),
+            options: new CSharpCompilationOptions(outputKind, allowUnsafe: true));
+
+    public static GeneratorDriver CreateTrackingDriver() =>
+        CSharpGeneratorDriver.Create(
+            [new IfItQuacksGenerator().AsSourceGenerator()],
+            parseOptions: ParseOptions,
+            driverOptions: new GeneratorDriverOptions(IncrementalGeneratorOutputKind.None, trackIncrementalGeneratorSteps: true));
+
+    public static SyntaxTree ParseText(string source) => CSharpSyntaxTree.ParseText(source, ParseOptions);
 
     public static Assembly EmitAndLoad(Compilation compilation)
     {

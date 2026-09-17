@@ -4,20 +4,23 @@ namespace IfItQuacks.Generator;
 
 internal static class TypeArgumentInference
 {
-    public static IMethodSymbol? TryConstruct(IMethodSymbol method, INamedTypeSymbol concreteType)
+    public static IMethodSymbol? TryConstruct(IMethodSymbol method, IEnumerable<(IParameterSymbol Parameter, INamedTypeSymbol ConcreteType)> arguments)
     {
-        var shape = (INamedTypeSymbol)method.Parameters[0].Type;
         var bindings = new Dictionary<ITypeParameterSymbol, ITypeSymbol>(SymbolEqualityComparer.Default);
 
-        foreach (var member in ShapeMatcher.GetShapeMembers(shape))
+        foreach (var (parameter, concreteType) in arguments)
         {
-            var matched = member switch
+            foreach (var member in ShapeMatcher.GetShapeMembers((INamedTypeSymbol)parameter.Type))
             {
-                IMethodSymbol shapeMethod => TryBindMethod(method, concreteType, shapeMethod, bindings),
-                IPropertySymbol shapeProperty => TryBindProperty(method, concreteType, shapeProperty, bindings),
-                _ => true,
-            };
-            if (!matched) return null;
+                var matched = member switch
+                {
+                    IMethodSymbol shapeMethod => TryBindMethod(method, concreteType, shapeMethod, bindings),
+                    IPropertySymbol shapeProperty => TryBindProperty(method, concreteType, shapeProperty, bindings),
+                    IEventSymbol shapeEvent => TryBindEvent(method, concreteType, shapeEvent, bindings),
+                    _ => true,
+                };
+                if (!matched && ShapeMatcher.IsRequired(member)) return null;
+            }
         }
 
         if (method.TypeParameters.Any(tp => !bindings.ContainsKey(tp)))
@@ -56,12 +59,35 @@ internal static class TypeArgumentInference
     private static bool TryBindProperty(IMethodSymbol method, INamedTypeSymbol concreteType, IPropertySymbol shapeProperty,
         Dictionary<ITypeParameterSymbol, ITypeSymbol> bindings)
     {
-        var candidate = ShapeMatcher.GetAllMembers(concreteType).OfType<IPropertySymbol>()
-            .FirstOrDefault(p => p.Name == shapeProperty.Name && p.DeclaredAccessibility == Accessibility.Public);
+        foreach (var candidate in ShapeMatcher.GetAllMembers(concreteType).OfType<IPropertySymbol>())
+        {
+            if (candidate.Name != shapeProperty.Name) continue;
+            if (candidate.DeclaredAccessibility != Accessibility.Public) continue;
+            if (candidate.Parameters.Length != shapeProperty.Parameters.Length) continue;
+
+            var attempt = new Dictionary<ITypeParameterSymbol, ITypeSymbol>(bindings, SymbolEqualityComparer.Default);
+            if (!Unify(method, shapeProperty.Type, candidate.Type, attempt)) continue;
+
+            var paramsMatch = true;
+            for (var i = 0; i < candidate.Parameters.Length && paramsMatch; i++)
+                paramsMatch = Unify(method, shapeProperty.Parameters[i].Type, candidate.Parameters[i].Type, attempt);
+            if (!paramsMatch) continue;
+
+            Commit(attempt, bindings);
+            return true;
+        }
+        return false;
+    }
+
+    private static bool TryBindEvent(IMethodSymbol method, INamedTypeSymbol concreteType, IEventSymbol shapeEvent,
+        Dictionary<ITypeParameterSymbol, ITypeSymbol> bindings)
+    {
+        var candidate = ShapeMatcher.GetAllMembers(concreteType).OfType<IEventSymbol>()
+            .FirstOrDefault(e => e.Name == shapeEvent.Name && e.DeclaredAccessibility == Accessibility.Public);
         if (candidate is null) return false;
 
         var attempt = new Dictionary<ITypeParameterSymbol, ITypeSymbol>(bindings, SymbolEqualityComparer.Default);
-        if (!Unify(method, shapeProperty.Type, candidate.Type, attempt)) return false;
+        if (!Unify(method, shapeEvent.Type, candidate.Type, attempt)) return false;
 
         Commit(attempt, bindings);
         return true;

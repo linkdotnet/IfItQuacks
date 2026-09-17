@@ -1,0 +1,312 @@
+using Microsoft.CodeAnalysis;
+using Xunit;
+
+namespace IfItQuacks.Tests;
+
+public class DuckTypedSignatureTests
+{
+    private const string Shapes = """
+        using IfItQuacks;
+        using System.Linq;
+
+        [DuckShape]
+        public interface INamed { string Name { get; } }
+
+        [DuckShape]
+        public interface IContainer<T> { T Get(); }
+
+        public class Person { public string Name => "Steven"; }
+        public class Pet { public string Name => "Duck"; }
+        public class Tag : INamed { public string Name => "Tag"; }
+        public class IntBox(int value) { public int Get() => value; }
+        public class Rock { }
+        """;
+
+    [Fact]
+    public void StaticMethod_WithSeveralShapeAndRegularParameters()
+    {
+        const string source = Shapes + """
+            public static partial class Ops
+            {
+                [DuckTyped]
+                public static string Meet(INamed first, int times, INamed second) =>
+                    string.Join(",", Enumerable.Repeat(first.Name + "+" + second.Name, times));
+            }
+
+            public static class Entry
+            {
+                public static string Run() => Ops.Meet(new Person(), 2, new Pet());
+            }
+            """;
+
+        Assert.Equal("Steven+Duck,Steven+Duck", Run(source));
+    }
+
+    [Fact]
+    public void NamedArgumentsInAnyOrder_AndOmittedDefaults()
+    {
+        const string source = Shapes + """
+            public static partial class Ops
+            {
+                [DuckTyped]
+                public static string Meet(INamed first, INamed second, string separator = "&", int times = 1) =>
+                    string.Join(",", Enumerable.Repeat(first.Name + separator + second.Name, times));
+            }
+
+            public static class Entry
+            {
+                public static string Run() => Ops.Meet(second: new Pet(), first: new Person()) + "|" + Ops.Meet(new Pet(), new Person(), times: 2);
+            }
+            """;
+
+        Assert.Equal("Steven&Duck|Duck&Steven,Duck&Steven", Run(source));
+    }
+
+    [Fact]
+    public void MixOfAdaptedArgumentsAndArgumentsImplementingTheShape()
+    {
+        const string source = Shapes + """
+            public static partial class Ops
+            {
+                [DuckTyped]
+                public static string Meet(INamed first, INamed second) => first.Name + "+" + second.Name;
+            }
+
+            public static class Entry
+            {
+                public static string Run() => Ops.Meet(new Tag(), new Pet());
+            }
+            """;
+
+        Assert.Equal("Tag+Duck", Run(source));
+    }
+
+    [Fact]
+    public void RefOutAndParamsParameters_ArePassedThrough()
+    {
+        const string source = Shapes + """
+            public static partial class Ops
+            {
+                [DuckTyped]
+                public static bool TryDescribe(INamed named, ref int calls, out string description, params string[] suffixes)
+                {
+                    calls++;
+                    description = named.Name + string.Concat(suffixes);
+                    return true;
+                }
+            }
+
+            public static class Entry
+            {
+                public static string Run()
+                {
+                    var calls = 0;
+                    Ops.TryDescribe(new Person(), ref calls, out var first, "!", "?");
+                    Ops.TryDescribe(new Pet(), ref calls, out var second);
+                    return first + second + calls;
+                }
+            }
+            """;
+
+        Assert.Equal("Steven!?Duck2", Run(source));
+    }
+
+    [Fact]
+    public void KeywordParameterNames_AreEscaped()
+    {
+        const string source = Shapes + """
+            public static partial class Ops
+            {
+                [DuckTyped]
+                public static string Describe(INamed @event, string @class) => @event.Name + @class;
+            }
+
+            public static class Entry
+            {
+                public static string Run() => Ops.Describe(new Person(), "!");
+            }
+            """;
+
+        Assert.Equal("Steven!", Run(source));
+    }
+
+    [Fact]
+    public void InstanceMethod_CalledOnReceiverAndViaImplicitThis()
+    {
+        const string source = Shapes + """
+            public partial class Greeter(string greeting)
+            {
+                [DuckTyped]
+                public string Greet(INamed named) => greeting + ", " + named.Name;
+
+                public string GreetPet() => Greet(new Pet());
+            }
+
+            public static class Entry
+            {
+                public static string Run()
+                {
+                    var greeter = new Greeter("Hello");
+                    return greeter.Greet(new Person()) + "|" + greeter.GreetPet();
+                }
+            }
+            """;
+
+        Assert.Equal("Hello, Steven|Hello, Duck", Run(source));
+    }
+
+    [Fact]
+    public void InstanceMethodOnRecord_AndStaticMethodOnRecordStruct()
+    {
+        const string source = Shapes + """
+            public partial record Greeter(string Greeting)
+            {
+                [DuckTyped]
+                public string Greet(INamed named) => Greeting + ", " + named.Name;
+            }
+
+            public readonly partial record struct Formatter
+            {
+                [DuckTyped]
+                public static string Format(INamed named) => "<" + named.Name + ">";
+            }
+
+            public static class Entry
+            {
+                public static string Run() => new Greeter("Hi").Greet(new Person()) + Formatter.Format(new Pet());
+            }
+            """;
+
+        Assert.Equal("Hi, Steven<Duck>", Run(source));
+    }
+
+    [Fact]
+    public void GenericInstanceMethod_InfersTypeArgumentUsedByRegularParameter()
+    {
+        const string source = Shapes + """
+            public partial class Collector
+            {
+                public System.Collections.Generic.List<string> Items { get; } = new();
+
+                [DuckTyped]
+                public T Add<T>(IContainer<T> container, T fallback)
+                {
+                    var value = container.Get();
+                    Items.Add(value + "/" + fallback);
+                    return value;
+                }
+            }
+
+            public static class Entry
+            {
+                public static string Run()
+                {
+                    var collector = new Collector();
+                    int value = collector.Add(new IntBox(42), 7);
+                    return value + "|" + string.Join(",", collector.Items);
+                }
+            }
+            """;
+
+        Assert.Equal("42|42/7", Run(source));
+    }
+
+    [Fact]
+    public void GenericMethod_InfersTypeArgumentFromSeveralShapeParameters()
+    {
+        const string source = Shapes + """
+            public static partial class Ops
+            {
+                [DuckTyped]
+                public static T Pick<T>(IContainer<T> first, IContainer<T> second, bool takeFirst) => takeFirst ? first.Get() : second.Get();
+            }
+
+            public static class Entry
+            {
+                public static int Run() => Ops.Pick(new IntBox(1), new IntBox(2), takeFirst: false);
+            }
+            """;
+
+        Assert.Equal(2, Run(source));
+    }
+
+    [Fact]
+    public void MismatchInSecondShapeParameter_ReportsIfItQuacks001OnThatArgument()
+    {
+        const string source = Shapes + """
+            public static partial class Ops
+            {
+                [DuckTyped]
+                public static string Meet(INamed first, INamed second) => first.Name + second.Name;
+            }
+
+            public static class Entry
+            {
+                public static string Run() => Ops.Meet(new Person(), new Rock());
+            }
+            """;
+
+        var (_, diagnostics) = GeneratorTestHelper.RunGenerator(source);
+        var diagnostic = Assert.Single(diagnostics, d => d.Id == "IFITQUACKS001");
+        Assert.Equal("new Rock()", diagnostic.Location.SourceTree!.GetText(TestContext.Current.CancellationToken).ToString(diagnostic.Location.SourceSpan));
+    }
+
+    [Fact]
+    public void MismatchInEveryShapeParameter_ReportsEachOne()
+    {
+        const string source = Shapes + """
+            public static partial class Ops
+            {
+                [DuckTyped]
+                public static string Meet(INamed first, INamed second) => first.Name + second.Name;
+            }
+
+            public static class Entry
+            {
+                public static string Run() => Ops.Meet(new Rock(), new Rock());
+            }
+            """;
+
+        var (_, diagnostics) = GeneratorTestHelper.RunGenerator(source);
+        Assert.Equal(2, diagnostics.Count(d => d.Id == "IFITQUACKS001"));
+    }
+
+    [Theory]
+    [InlineData("public partial struct Holder { [DuckTyped] public string Get(INamed n) => n.Name; }")]
+    [InlineData("public partial class Holder<T> { [DuckTyped] public static string Get(INamed n) => n.Name; }")]
+    [InlineData("public static partial class Holder { [DuckTyped] public static string Get(this INamed n) => n.Name; }")]
+    [InlineData("public static partial class Holder { [DuckTyped] public static T Get<T>(INamed n, T value) => value; }")]
+    [InlineData("public static partial class Holder { [DuckTyped] private static string Get(INamed n) => n.Name; }")]
+    [InlineData("public partial class Holder { [DuckTyped] protected string Get(INamed n) => n.Name; }")]
+    public void UnsupportedSignature_ReportsIfItQuacks004(string declaration)
+    {
+        var source = Shapes + declaration;
+
+        var (_, diagnostics) = GeneratorTestHelper.RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "IFITQUACKS004");
+    }
+
+    [Fact]
+    public void MethodWithoutShapeParameter_ReportsIfItQuacks003()
+    {
+        const string source = Shapes + """
+            public static partial class Ops
+            {
+                [DuckTyped]
+                public static int Twice(int value) => value * 2;
+            }
+            """;
+
+        var (_, diagnostics) = GeneratorTestHelper.RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "IFITQUACKS003");
+    }
+
+    private static object? Run(string source)
+    {
+        var (compilation, diagnostics) = GeneratorTestHelper.RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var assembly = GeneratorTestHelper.EmitAndLoad(compilation);
+        return assembly.GetType("Entry")!.GetMethod("Run")!.Invoke(null, null);
+    }
+}

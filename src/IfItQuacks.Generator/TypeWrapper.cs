@@ -24,7 +24,13 @@ internal static class TypeWrapper
         var indent = hasNamespace ? "    " : "";
         foreach (var t in typeChain)
         {
-            var kind = t.TypeKind == TypeKind.Struct ? "struct" : "class";
+            var kind = (t.IsRecord, t.TypeKind == TypeKind.Struct) switch
+            {
+                (true, true) => "record struct",
+                (true, false) => "record",
+                (false, true) => "struct",
+                _ => "class",
+            };
             var staticMod = t.IsStatic ? "static " : "";
             sb.AppendLine($"{indent}{Utilities.AccessibilityKeyword(t.DeclaredAccessibility)} {staticMod}partial {kind} {t.Name}{TypeParams(t)}");
             sb.AppendLine($"{indent}{{");
@@ -44,6 +50,14 @@ internal static class TypeWrapper
             sb.AppendLine("}");
 
         return sb.ToString();
+    }
+
+    public static (string Prefix, string Suffix) WrapTemplate(INamedTypeSymbol type)
+    {
+        const string placeholder = "__MEMBERS__";
+        var wrapped = WrapInContainingScope(type, placeholder);
+        var index = wrapped.IndexOf(placeholder, StringComparison.Ordinal);
+        return (wrapped.Substring(0, index), wrapped.Substring(index + placeholder.Length));
     }
 
     private static string TypeParams(INamedTypeSymbol t) =>
