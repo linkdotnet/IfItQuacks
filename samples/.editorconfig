@@ -3,3 +3,5 @@ dotnet_diagnostic.CA1062.severity = none # CA1062: Validate arguments of public 
 dotnet_diagnostic.CA1303.severity = none # CA1303: Do not pass literals as localized parameters
 dotnet_diagnostic.CA1822.severity = none # CA1822: Mark members as static - instance members are required to match the shape
 dotnet_diagnostic.S2325.severity = none  # S2325: Methods and properties that don't access instance data should be static
+dotnet_diagnostic.CA1051.severity = none # CA1051: Do not declare visible instance fields - public fields are matched against shape properties
+dotnet_diagnostic.S1104.severity = none  # S1104: Fields should not have public accessibility - public fields are matched against shape properties

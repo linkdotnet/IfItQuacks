@@ -171,21 +171,26 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         var targetMethod = duckMethod;
         if (duckMethod.IsGenericMethod)
         {
-            foreach (var (parameter, expression, _) in duckArguments)
+            foreach (var (parameter, expression, concreteType) in duckArguments)
+            {
                 if (FindUnsupportedMemberDiagnostic(expression, (INamedTypeSymbol)parameter.Type) is { } unsupported)
                     diagnostics.Add(unsupported);
+                else if (concreteType.IsAnonymousType)
+                    diagnostics.Add(Diagnostic.Create(Diagnostics.ShapeMismatch, expression.GetLocation(), concreteType.ToDisplayString(),
+                        parameter.Type.ToDisplayString(), "anonymous types are not supported by generic [DuckTyped] methods"));
+            }
             if (diagnostics.Count > 0)
                 return DiagnosticsOnly(diagnostics);
 
             var constructed = TypeArgumentInference.TryConstruct(duckMethod, duckArguments.Select(a => (a.Parameter, a.ConcreteType)));
             if (constructed is null)
             {
-                var failing = duckArguments.FirstOrDefault(a => ShapeMatcher.FindMismatch((INamedTypeSymbol)a.Parameter.Type, a.ConcreteType) is not null);
+                var failing = duckArguments.FirstOrDefault(a => ShapeMatcher.FindMismatch((INamedTypeSymbol)a.Parameter.Type, a.ConcreteType, compilation) is not null);
                 if (failing.Parameter is null)
                     failing = duckArguments[0];
                 diagnostics.Add(Diagnostic.Create(Diagnostics.ShapeMismatch, failing.Expression.GetLocation(),
                     failing.ConcreteType.ToDisplayString(), failing.Parameter.Type.ToDisplayString(),
-                    ShapeMatcher.FindMismatch((INamedTypeSymbol)failing.Parameter.Type, failing.ConcreteType)
+                    ShapeMatcher.FindMismatch((INamedTypeSymbol)failing.Parameter.Type, failing.ConcreteType, compilation)
                     ?? $"type arguments for '{duckMethod.Name}' could not be inferred"));
                 return DiagnosticsOnly(diagnostics);
             }
@@ -197,13 +202,13 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         foreach (var (parameter, expression, concreteType) in duckArguments)
         {
             var shape = (INamedTypeSymbol)targetMethod.Parameters[parameter.Ordinal].Type;
-            if (VerifyArgument(expression, shape, concreteType, out var implementsDirectly) is { } diagnostic)
+            if (VerifyArgument(expression, shape, concreteType, compilation, out var implementsDirectly) is { } diagnostic)
             {
                 diagnostics.Add(diagnostic);
                 continue;
             }
 
-            var adapter = implementsDirectly ? null : CreateAdapter(shape, concreteType);
+            var adapter = implementsDirectly ? null : CreateAdapter(shape, concreteType, compilation);
             if (adapter is not null)
                 adapters.Add(adapter);
             resolved[parameter.Ordinal] = (concreteType, adapter?.Name);
@@ -246,7 +251,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             concreteType.TypeKind == TypeKind.Error || ContainsAnyTypeParameter(concreteType))
             return null;
 
-        if (VerifyArgument(argExpr, shape, concreteType, out var implementsDirectly) is { } diagnostic)
+        if (VerifyArgument(argExpr, shape, concreteType, semanticModel.Compilation, out var implementsDirectly) is { } diagnostic)
             return DiagnosticsOnly([diagnostic]);
 
         var location = semanticModel.GetInterceptableLocation(invocation, ct);
@@ -254,10 +259,9 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             return null;
 
         var shapeTypeName = shape.ToDisplayString();
-        var adapter = implementsDirectly ? null : CreateAdapter(shape, concreteType);
-        var result = adapter is null
-            ? "value"
-            : $"new global::{GeneratedNamespace}.{adapter.Name}(({concreteType.ToDisplayString()})value)";
+        var adapter = implementsDirectly ? null : CreateAdapter(shape, concreteType, semanticModel.Compilation);
+        var argument = concreteType.IsAnonymousType ? "value" : $"({concreteType.ToDisplayString()})value";
+        var result = adapter is null ? "value" : $"new global::{GeneratedNamespace}.{adapter.Name}({argument})";
 
         var interceptor =
             $"        {location.GetInterceptsLocationAttributeSyntax()}\n" +
@@ -290,14 +294,17 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
     }
 
     private static Diagnostic? VerifyArgument(ExpressionSyntax argExpr, INamedTypeSymbol shape, INamedTypeSymbol concreteType,
-        out bool implementsDirectly)
+        Compilation compilation, out bool implementsDirectly)
     {
         implementsDirectly = false;
 
         if (FindUnsupportedMemberDiagnostic(argExpr, shape) is { } unsupported)
             return unsupported;
 
-        var mismatch = ShapeMatcher.FindMismatch(shape, concreteType);
+        var mismatch = ShapeMatcher.FindMismatch(shape, concreteType, compilation) ??
+                       (concreteType.IsAnonymousType && AdapterEmitter.FindUnnameableProperty(concreteType) is { } property
+                           ? $"property '{property}' has a type that contains an anonymous type"
+                           : null);
         if (mismatch is not null)
         {
             return Diagnostic.Create(Diagnostics.ShapeMismatch, argExpr.GetLocation(),
@@ -322,10 +329,10 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
     private static CallSiteOutput DiagnosticsOnly(IEnumerable<Diagnostic> diagnostics) =>
         new(null, default, null, new EquatableArray<Diagnostic>(diagnostics.ToImmutableArray()));
 
-    private static GeneratedFile CreateAdapter(INamedTypeSymbol shape, INamedTypeSymbol concreteType)
+    private static GeneratedFile CreateAdapter(INamedTypeSymbol shape, INamedTypeSymbol concreteType, Compilation compilation)
     {
         var name = AdapterEmitter.GetAdapterName(shape, concreteType);
-        return new GeneratedFile(name, AdapterEmitter.Emit(shape, concreteType, name));
+        return new GeneratedFile(name, AdapterEmitter.Emit(shape, concreteType, name, compilation));
     }
 
     private static ImmutableArray<IParameterSymbol> GetDuckParameters(IMethodSymbol method) =>
@@ -446,7 +453,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
     private static GeneratedFile CreateFallbackOverload(IMethodSymbol method)
     {
         var duckParameters = GetDuckParameters(method);
-        var typeParameterNames = duckParameters.ToDictionary(p => p.Ordinal, p => $"TDuck{p.Ordinal}");
+        var typeParameterNames = duckParameters.ToDictionary(p => p.Ordinal, FallbackTypeParameterName);
 
         var parameters = string.Join(", ", method.Parameters.Select(p =>
             Utilities.Parameter(p, typeParameterNames.TryGetValue(p.Ordinal, out var name) ? name : p.Type.ToDisplayString()) + Utilities.DefaultValue(p)));
@@ -497,8 +504,14 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
     private static string CreateInterceptor(InterceptableLocation location, IMethodSymbol method,
         Dictionary<int, (INamedTypeSymbol ConcreteType, string? AdapterName)> duckArguments)
     {
+        // Anonymous types can't be named in the signature, so the interceptor stays generic like the fallback it replaces.
+        var isGeneric = duckArguments.Values.Any(d => d.ConcreteType.IsAnonymousType);
         var parameters = method.Parameters.Select(p =>
-            Utilities.Parameter(p, duckArguments.TryGetValue(p.Ordinal, out var duck) ? duck.ConcreteType.ToDisplayString() : p.Type.ToDisplayString()));
+        {
+            if (!duckArguments.TryGetValue(p.Ordinal, out var duck))
+                return Utilities.Parameter(p, p.Type.ToDisplayString());
+            return Utilities.Parameter(p, isGeneric ? FallbackTypeParameterName(p) : duck.ConcreteType.ToDisplayString());
+        });
         if (!method.IsStatic)
             parameters = parameters.Prepend($"this global::{method.ContainingType.ToDisplayString()} @this");
 
@@ -509,21 +522,26 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
                 return Utilities.Argument(p);
 
             var name = Utilities.Identifier(p.Name);
+            if (isGeneric)
+                name = duck.ConcreteType.IsAnonymousType ? $"(object){name}!" : $"({duck.ConcreteType.ToDisplayString()})(object){name}!";
             var value = duck.AdapterName is null ? name : $"new global::{GeneratedNamespace}.{duck.AdapterName}({name})";
             return $"(global::{p.Type.ToDisplayString()})({value})";
         });
+        var typeParameters = isGeneric ? $"<{string.Join(", ", GetDuckParameters(method).Select(FallbackTypeParameterName))}>" : "";
 
         var receiver = method.IsStatic ? $"global::{method.ContainingType.ToDisplayString()}" : "@this";
         var call = $"{receiver}.{method.Name}({string.Join(", ", arguments)});";
 
         var sb = new StringBuilder();
         sb.AppendLine("        " + location.GetInterceptsLocationAttributeSyntax());
-        sb.AppendLine($"        public static {method.ReturnType.ToDisplayString()} Interceptor_{InterceptorIndexPlaceholder}({string.Join(", ", parameters)})");
+        sb.AppendLine($"        public static {method.ReturnType.ToDisplayString()} Interceptor_{InterceptorIndexPlaceholder}{typeParameters}({string.Join(", ", parameters)})");
         sb.AppendLine("        {");
         sb.AppendLine(method.ReturnsVoid ? $"            {call}" : $"            return {call}");
         sb.AppendLine("        }");
         return sb.ToString();
     }
+
+    private static string FallbackTypeParameterName(IParameterSymbol parameter) => $"TDuck{parameter.Ordinal}";
 
     private static string SanitizeHintName(string name) => name.Replace('.', '_').Replace('<', '_').Replace('>', '_').Replace(',', '_').Replace(' ', '_');
 

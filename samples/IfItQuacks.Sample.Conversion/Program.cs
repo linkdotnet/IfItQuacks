@@ -16,3 +16,7 @@ foreach (var item in named)
 var view = Duck.As<ICustomerView>(customer);
 customer.Email = "quack@example.com";
 Console.WriteLine($"{view.Name} <{view.Email}>");
+
+var viewAgain = Duck.As<ICustomerView>(customer);
+HashSet<ICustomerView> views = [view, viewAgain];
+Console.WriteLine($"{views.Count} distinct view(s) of {Duck.Unwrap(view)}");

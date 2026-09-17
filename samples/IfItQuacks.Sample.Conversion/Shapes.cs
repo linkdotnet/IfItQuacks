@@ -18,6 +18,8 @@ public class Customer
     public string Name { get; set; } = "";
     public string Email { get; set; } = "";
     public string InternalNotes { get; set; } = "";
+
+    public override string ToString() => Name;
 }
 
 public readonly record struct Product(string Name, decimal Price);

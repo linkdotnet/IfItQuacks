@@ -13,14 +13,6 @@ Compile-time checked structural (duck) typing for C#: "If it walks like a duck a
 
 > PM> Install-Package IfItQuacks
 
-IfItQuacks relies on [interceptors](https://github.com/dotnet/roslyn/blob/main/docs/features/interceptors.md), so the generated namespace has to be enabled in your project file:
-
-```xml
-<PropertyGroup>
-  <InterceptorsNamespaces>$(InterceptorsNamespaces);IfItQuacks.Generated</InterceptorsNamespaces>
-</PropertyGroup>
-```
-
 Declare a shape, mark a method as duck-typed and pass in anything that fits:
 
 ```csharp
@@ -53,7 +45,63 @@ To keep a duck-typed value around, convert it explicitly:
 List<INamed> names = [Duck.As<INamed>(new Person()), Duck.As<INamed>(new Mallard())];
 ```
 
-Generic shapes (`IContainer<T>`), generic methods, events, indexers and default interface members are supported as well.
+## Highlights
+
+### Anonymous types
+
+Like object literals in TypeScript, anonymous types are ducks too - perfect for tests and quick stubs:
+
+```csharp
+new Greeter().Greet(new { Name = "Steven" }, new Mallard());
+
+IPerson stub = Duck.As<IPerson>(new { Name = "Donald", Age = 90 });
+```
+
+### Compatible, not identical
+
+Members only have to fit, just like an assignment would:
+
+```csharp
+[DuckShape]
+public interface IInventory
+{
+    IEnumerable<string> Items { get; }
+    long Count();
+    void Add(string item);
+}
+
+public class Warehouse
+{
+    public List<string> Items { get; } = [];                  // List<string> -> IEnumerable<string>
+    public int Count() => Items.Count;                        // int -> long
+    public bool Add(object item) { Items.Add($"{item}"); return true; } // string -> object, result discarded
+}
+```
+
+### Fields count as properties
+
+```csharp
+public class LegacyPerson { public string Name = ""; }
+
+new Greeter().Greet(new LegacyPerson { Name = "Steven" }, new Mallard());
+```
+
+### Identity is preserved
+
+Adapters forward `Equals`, `GetHashCode` and `ToString` to the original instance, so they work as dictionary keys and in sets. `Duck.Unwrap` gives you the original back:
+
+```csharp
+var person = new Person();
+Duck.As<INamed>(person).Equals(Duck.As<INamed>(person)); // true
+Duck.Unwrap(Duck.As<INamed>(person)) is Person;          // true
+```
+
+### And more
+
+- Generic shapes (`IContainer<T>`) and generic `[DuckTyped]` methods with inferred type arguments
+- Events, indexers and default interface members
+- Instance and static methods, `ref`/`out`, `params`, default values and named arguments
+- Zero setup: install the package, no project file changes
 
 ## Documentation
 

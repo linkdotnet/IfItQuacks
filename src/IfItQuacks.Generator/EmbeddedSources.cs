@@ -31,6 +31,17 @@ internal static class EmbeddedSources
                 {
                     throw new DuckShapeMismatchException(value?.GetType() ?? typeof(object), typeof(TShape));
                 }
+
+                /// <summary>Returns the original instance behind a generated adapter, or <paramref name="value"/> itself
+                /// if it is not an adapter (e.g. because its type already implements the shape).</summary>
+                public static object? Unwrap(object? value) => value is IDuckAdapter adapter ? adapter.Value : value;
+            }
+
+            /// <summary>Implemented by every generated adapter to expose the instance it forwards to.</summary>
+            [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+            internal interface IDuckAdapter
+            {
+                object? Value { get; }
             }
 
             /// <summary>Thrown when a duck-typed call reaches the non-intercepted fallback path,

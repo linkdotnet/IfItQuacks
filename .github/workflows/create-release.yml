@@ -52,6 +52,17 @@ jobs:
       with:
         version: v${{ github.event.inputs.versionIncrement }}
 
+    - name: Ship analyzer releases
+      if: github.event.inputs.prerelease == 'false'
+      run: |
+        UNSHIPPED=src/IfItQuacks.Generator/AnalyzerReleases.Unshipped.md
+        SHIPPED=src/IfItQuacks.Generator/AnalyzerReleases.Shipped.md
+        BODY=$(grep -v '^;' "$UNSHIPPED" | sed '/./,$!d')
+        if [ -n "$BODY" ]; then
+          printf '\n## Release %s\n\n%s\n' "${{ github.event.inputs.versionIncrement }}" "$BODY" >> "$SHIPPED"
+          grep '^;' "$UNSHIPPED" > "$UNSHIPPED.tmp" && mv "$UNSHIPPED.tmp" "$UNSHIPPED"
+        fi
+
     - name: Set git config
       if: github.event.inputs.prerelease == 'false'
       run: |
@@ -61,8 +72,8 @@ jobs:
     - name: Commit changes and push changes
       if: github.event.inputs.prerelease == 'false'
       run: |
-        git add CHANGELOG.md
-        git commit -m "Update Changelog.md for ${{ github.event.inputs.versionIncrement }} release"
+        git add CHANGELOG.md src/IfItQuacks.Generator/AnalyzerReleases.*.md
+        git commit -m "Update Changelog.md and analyzer releases for ${{ github.event.inputs.versionIncrement }} release"
         git push origin main
 
     - name: Create release on GitHub

@@ -17,5 +17,10 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 - Generated types are `internal`, so several projects in a solution can use IfItQuacks.
 - Generated overloads are hidden from IntelliSense.
 - The generator is incremental and only re-analyzes calls to `[DuckTyped]` methods and `Duck.As`.
+- The package enables `InterceptorsNamespaces` for `IfItQuacks.Generated`, so no project file changes are needed.
+- Member types only need to be assignable (covariant returns and getters, contravariant parameters and setters, `void` shape methods discard results) instead of identical.
+- Public fields satisfy shape properties.
+- Anonymous types can be passed to `[DuckTyped]` methods and `Duck.As`.
+- Adapters forward `Equals`, `GetHashCode` and `ToString` to the wrapped instance; `Duck.Unwrap` returns it.
 
 [unreleased]: https://github.com/linkdotnet/IfItQuacks/compare/64a9c6e...HEAD

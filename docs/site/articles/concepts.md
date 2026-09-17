@@ -27,22 +27,44 @@ The call now binds to the generic overload. It is hidden from IntelliSense and n
 
 For every call of the `[DuckTyped]` method, the static type of each argument passed to a `[DuckShape]` parameter is checked against that shape. Arguments are matched to parameters by position or by name. Every shape member needs a public counterpart (see [Defining a shape](getting_started.md#defining-a-shape)); members with a default implementation are optional.
 
-Members inherited from base classes count. If something is missing, [`IFITQUACKS001`](diagnostics.md#ifitquacks001) is reported on the argument.
+Members inherited from base classes count, public fields can satisfy properties, and member types only need to be assignable (see [Defining a shape](getting_started.md#defining-a-shape)). If something is missing or incompatible, [`IFITQUACKS001`](diagnostics.md#ifitquacks001) is reported on the argument.
 
 ## 3. Adapter
 
 If the argument type does not already implement the shape, a `readonly struct` adapter is emitted into `IfItQuacks.Generated`:
 
 ```csharp
-internal readonly struct ShapeAdapter_IDoable_A : global::IDoable
+internal readonly struct ShapeAdapter_IDoable_A : global::IDoable, global::IfItQuacks.IDuckAdapter
 {
     private readonly A _value;
     public ShapeAdapter_IDoable_A(A value) => _value = value;
+    object? global::IfItQuacks.IDuckAdapter.Value => _value;
     public void Do() => _value.Do();
+    public override bool Equals(object? obj) => global::System.Object.Equals(_value, global::IfItQuacks.Duck.Unwrap(obj));
+    public override int GetHashCode() => _value?.GetHashCode() ?? 0;
+    public override string ToString() => _value?.ToString() ?? string.Empty;
 }
 ```
 
-One adapter is generated per shape/type combination.
+One adapter is generated per shape/type combination. `Equals`, `GetHashCode` and `ToString` forward to the wrapped value, so adapters of the same instance are equal; `IDuckAdapter` lets `Duck.Unwrap` return that instance.
+
+If a member was matched with an assignable instead of an identical parameter type, the forwarder casts the argument (`_value.Add((object)item)`), so the call binds to exactly the member that was matched.
+
+### Anonymous types
+
+An anonymous type has no name the adapter could use. But two anonymous object expressions with the same property names, types and order in one compilation have the same type, so the adapter stores the value as `object` and casts it back using an example expression:
+
+```csharp
+internal readonly struct ShapeAdapter_INamed_Anonymous_... : global::INamed, global::IfItQuacks.IDuckAdapter
+{
+    private readonly object _value;
+    public string Name { get => __CastByExample(_value, static () => new { Name = default(global::System.String)! }).Name; }
+    private static T __CastByExample<T>(object value, global::System.Func<T> example) => (T)value;
+    // Equals, GetHashCode, ToString, ...
+}
+```
+
+The example lambda is never invoked and doesn't capture anything, so it isn't allocated per call. Because the argument's type can't be named in the interceptor either, calls with anonymous arguments get a generic interceptor with the same type parameters as the fallback overload.
 
 ## 4. Interceptor
 

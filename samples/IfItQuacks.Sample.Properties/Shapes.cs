@@ -11,6 +11,11 @@ public class Person
     public string Name { get; set; } = "";
 }
 
+public class LegacyPerson
+{
+    public string Name = "";
+}
+
 public static partial class Ops
 {
     [DuckTyped]

@@ -10,7 +10,9 @@ uid: getting_started
 dotnet add package IfItQuacks
 ```
 
-IfItQuacks is a source generator built on top of [interceptors](https://github.com/dotnet/roslyn/blob/main/docs/features/interceptors.md). Interceptors are opt-in per namespace, so add the generated namespace to your project file:
+IfItQuacks is a source generator built on top of [interceptors](https://github.com/dotnet/roslyn/blob/main/docs/features/interceptors.md). Interceptors are opt-in per namespace; the package enables its generated namespace automatically, so no project file changes are needed.
+
+Only if you reference the generator as a project (`OutputItemType="Analyzer"`) instead of the NuGet package, add the namespace yourself:
 
 ```xml
 <PropertyGroup>
@@ -26,7 +28,7 @@ The generator adds the following `internal` types to the `IfItQuacks` namespace 
 |---|---|
 | `DuckShapeAttribute` | Marks an interface as a structural "shape" that other types may satisfy without implementing it. |
 | `DuckTypedAttribute` | Marks a method whose `[DuckShape]` parameters accept any type that structurally matches the interface. |
-| `Duck` | `Duck.As<TShape>(value)` converts a value to a shape it structurally satisfies. |
+| `Duck` | `Duck.As<TShape>(value)` converts a value to a shape it structurally satisfies; `Duck.Unwrap(value)` returns the original instance behind an adapter. |
 | `DuckShapeMismatchException` | Thrown by the generated fallback if a call could not be verified at compile time. |
 
 ## Defining a shape
@@ -35,11 +37,30 @@ A shape is a regular interface decorated with `[DuckShape]`. The following membe
 
 | Member | Matched against |
 |---|---|
-| Methods | A public method with the same name, return type, parameter types and ref-kinds. |
-| Properties | A public property with the same name and type, and a public getter/setter where the shape declares one. |
-| Indexers | A public indexer with the same type, parameter types and accessors. |
+| Methods | A public instance method with the same name and number of parameters. Its return type has to be assignable to the shape's (a `void` shape method accepts any return type), and the shape's parameter types have to be assignable to its parameters. `ref`/`out`/`in` parameters must match exactly. |
+| Properties | A public instance property or field with the same name, and a public getter/setter where the shape declares one (a field needs to be non-`readonly` for a setter). A getter's type has to be assignable to the shape's type, a setter's the other way round - with both, the types have to convert in both directions. |
+| Indexers | A public indexer with the same accessors, assignable parameter types and a type following the property rules. |
 | Events | A public event with the same name and delegate type. |
 | Default interface members | Optional. If the type has a matching member, it is used; otherwise the default implementation runs. |
+
+"Assignable" means an implicit identity, reference, boxing, numeric or nullable conversion - just like in an assignment - but no user-defined conversion operators. If several members match, one with exactly the same types wins:
+
+```csharp
+[DuckShape]
+public interface IInventory
+{
+    IEnumerable<string> Items { get; }
+    long Count();
+    void Add(string item);
+}
+
+public class Warehouse
+{
+    public List<string> Items { get; } = [];     // List<string> -> IEnumerable<string>
+    public int Count() => Items.Count;           // int -> long
+    public bool Add(object item) { /* ... */ }   // string -> object, result is discarded
+}
+```
 
 Generic methods (`U Map<U>()`), `ref` returns and `static abstract` members can't be adapted and are reported with [`IFITQUACKS005`](diagnostics.md#ifitquacks005).
 
@@ -132,6 +153,32 @@ List<INameable> nameables = [Duck.As<INameable>(new Person()), Duck.As<INameable
 
 The same compile-time checks apply as for `[DuckTyped]` methods. The type argument must be a `[DuckShape]` interface ([`IFITQUACKS007`](diagnostics.md#ifitquacks007)).
 
+## Anonymous types
+
+Anonymous types can be passed to `[DuckTyped]` methods and `Duck.As` like any other type - handy for tests and quick stubs, much like object literals in TypeScript:
+
+```csharp
+Greeter.Greet(new { Name = "Steven" });
+
+IPerson stub = Duck.As<IPerson>(new { Name = "Donald", Age = 90, Hometown = "Duckburg" });
+```
+
+Anonymous type properties are read-only, so shapes with setters, methods, indexers or events can't be satisfied. Nested anonymous types are supported; a property whose type only contains an anonymous type (e.g. `new[] { new { A = 1 } }`) and generic `[DuckTyped]` methods are not ([`IFITQUACKS001`](diagnostics.md#ifitquacks001)).
+
+## Identity
+
+Adapters forward `Equals`, `GetHashCode` and `ToString` to the original instance, so two adapters of the same object are equal and collapse in a `HashSet` or as dictionary keys. `Duck.Unwrap` gives you the original instance back:
+
+```csharp
+var person = new Person();
+INameable a = Duck.As<INameable>(person), b = Duck.As<INameable>(person);
+
+a.Equals(b);                        // true
+new HashSet<INameable> { a, b }.Count; // 1
+Duck.Unwrap(a) is Person;           // true
+ReferenceEquals(a, b);              // false - every conversion creates a new adapter
+```
+
 ### A view, not a mapper
 
 `Duck.As` doesn't copy anything. The returned object forwards to the original instance:
@@ -144,13 +191,15 @@ customer.Email = "quack@example.com";
 Console.WriteLine(view.Email); // quack@example.com
 ```
 
-That makes it a cheap way to expose a narrower view of a type, e.g. hiding members of an entity behind a get-only shape. It is not a replacement for a mapper: members must match by name and type, nested objects and collections are not converted, and the result is not a standalone DTO (serializers see the adapter type, and changes to the source are still visible).
+That makes it a cheap way to expose a narrower view of a type, e.g. hiding members of an entity behind a get-only shape. It is not a replacement for a mapper: members must match by name and have compatible types, nested objects and collections are not converted, and the result is not a standalone DTO (serializers see the adapter type, and changes to the source are still visible).
 
 Runnable examples live in [`samples`](https://github.com/linkdotnet/IfItQuacks/tree/main/samples), one project per showcase:
 
 | Project | Shows |
 |---|---|
 | `IfItQuacks.Sample.Methods` | Static and instance `[DuckTyped]` methods with several parameters |
-| `IfItQuacks.Sample.Properties` | Read-write property shapes |
+| `IfItQuacks.Sample.Properties` | Read-write property shapes, satisfied by properties and fields |
+| `IfItQuacks.Sample.Assignability` | Compatible instead of identical member types, fields as properties |
+| `IfItQuacks.Sample.AnonymousTypes` | Anonymous types for `[DuckTyped]` methods and `Duck.As` |
 | `IfItQuacks.Sample.Generics` | Generic shapes and generic `[DuckTyped]` methods |
-| `IfItQuacks.Sample.Conversion` | `Duck.As` for collections and read-only views |
+| `IfItQuacks.Sample.Conversion` | `Duck.As` for collections and read-only views, identity and `Duck.Unwrap` |

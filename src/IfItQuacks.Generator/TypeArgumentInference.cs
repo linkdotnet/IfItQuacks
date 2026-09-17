@@ -59,6 +59,18 @@ internal static class TypeArgumentInference
     private static bool TryBindProperty(IMethodSymbol method, INamedTypeSymbol concreteType, IPropertySymbol shapeProperty,
         Dictionary<ITypeParameterSymbol, ITypeSymbol> bindings)
     {
+        if (!shapeProperty.IsIndexer)
+        {
+            var field = ShapeMatcher.GetAllMembers(concreteType).OfType<IFieldSymbol>()
+                .FirstOrDefault(f => f.Name == shapeProperty.Name && !f.IsStatic && f.DeclaredAccessibility == Accessibility.Public);
+            var attempt = new Dictionary<ITypeParameterSymbol, ITypeSymbol>(bindings, SymbolEqualityComparer.Default);
+            if (field is not null && Unify(method, shapeProperty.Type, field.Type, attempt))
+            {
+                Commit(attempt, bindings);
+                return true;
+            }
+        }
+
         foreach (var candidate in ShapeMatcher.GetAllMembers(concreteType).OfType<IPropertySymbol>())
         {
             if (candidate.Name != shapeProperty.Name) continue;

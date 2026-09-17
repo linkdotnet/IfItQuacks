@@ -10,7 +10,7 @@ All diagnostics are reported as errors in the `IfItQuacks` category.
 
 **Argument does not structurally satisfy duck shape**
 
-The argument's type is missing a member of the shape, or a member has a different signature or no public getter/setter. For generic `[DuckTyped]` methods this is also reported when the type arguments can't be inferred from the argument. The compiler reports `CS0411` in addition, because no generic fallback overload exists for these methods.
+The argument's type is missing a member of the shape, or a member has an incompatible type (see [Defining a shape](getting_started.md#defining-a-shape)), no public getter/setter or is a `readonly` field where the shape declares a setter. It is also reported for anonymous types passed to generic `[DuckTyped]` methods, and for anonymous types with a property whose type contains another anonymous type as a type argument or array element. For generic `[DuckTyped]` methods this is also reported when the type arguments can't be inferred from the argument. The compiler reports `CS0411` in addition, because no generic fallback overload exists for these methods.
 
 ```csharp
 public class Rock { }

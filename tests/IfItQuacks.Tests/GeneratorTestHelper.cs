@@ -5,6 +5,7 @@ using IfItQuacks.Generator;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Emit;
+using Xunit;
 
 namespace IfItQuacks.Tests;
 
@@ -32,6 +33,16 @@ internal static class GeneratorTestHelper
 
         return (outputCompilation, allDiagnostics);
     }
+
+    public static object? CompileAndRun(string source, string typeName = "Entry", string methodName = "Run")
+    {
+        var (compilation, diagnostics) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        return EmitAndLoad(compilation).GetType(typeName)!.GetMethod(methodName)!.Invoke(null, null);
+    }
+
+    public static ImmutableArray<string> GetDiagnosticIds(string source) =>
+        RunGenerator(source).Diagnostics.Select(d => d.Id).ToImmutableArray();
 
     public static CSharpCompilation CreateCompilation(OutputKind outputKind, IEnumerable<MetadataReference>? additionalReferences, params string[] sources) =>
         CSharpCompilation.Create(
