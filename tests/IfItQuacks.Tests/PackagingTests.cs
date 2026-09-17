@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using System.Xml.Linq;
 using Xunit;
 
@@ -26,6 +25,12 @@ public class PackagingTests
         Assert.Equal("build;buildTransitive", (string?)packed.Attribute("PackagePath"));
     }
 
-    private static string RepositoryRoot([CallerFilePath] string path = "") =>
-        Path.GetFullPath(Path.Combine(Path.GetDirectoryName(path)!, "..", ".."));
+    // CallerFilePath is remapped for deterministic CI builds, so the root is located from the test output instead.
+    private static string RepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (!File.Exists(Path.Combine(directory.FullName, "IfItQuacks.slnx")))
+            directory = directory.Parent ?? throw new DirectoryNotFoundException("Repository root not found.");
+        return directory.FullName;
+    }
 }

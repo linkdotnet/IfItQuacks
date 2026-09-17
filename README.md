@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/showcase.webp" alt="IfItQuacks: any class and anonymous types satisfy an interface, mismatches fail the build" />
+  <img src="https://raw.githubusercontent.com/linkdotnet/IfItQuacks/main/assets/showcase.webp" alt="IfItQuacks: any class and anonymous types satisfy an interface, mismatches fail the build" />
 </p>
 
 # IfItQuacks

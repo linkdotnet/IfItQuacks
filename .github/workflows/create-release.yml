@@ -46,6 +46,9 @@ jobs:
       with:
         global-json-file: global.json
 
+    - name: Test
+      run: dotnet test -c Release
+
     - name: Update CHANGELOG file
       if: github.event.inputs.prerelease == 'false'
       uses: thomaseizinger/keep-a-changelog-new-release@3.1.0
@@ -75,6 +78,7 @@ jobs:
         git add CHANGELOG.md src/IfItQuacks.Generator/AnalyzerReleases.*.md
         git commit -m "Update Changelog.md and analyzer releases for ${{ github.event.inputs.versionIncrement }} release"
         git push origin main
+        echo "RELEASE_COMMIT_HASH=$(git rev-parse HEAD)" >> $GITHUB_ENV
 
     - name: Create release on GitHub
       if: github.event.inputs.prerelease == 'false'
