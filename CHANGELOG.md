@@ -6,6 +6,8 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 ## [Unreleased]
 
+## [v1.3.0] - 2026-09-18
+
 ### Added
 
 - `[DuckTyped]` extension methods: the receiver is duck-typed too, so `person.Greet()` works for any type fitting the interface. Previously reported with `IFITQUACKS004`.
@@ -32,7 +34,7 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 ### Changed
 
-- `IFITQUACKS007` is titled *Duck conversion target must be an interface* and names the conversion (`Duck.As`, `Duck.Stub` or `Duck.Merge`) that was called.
+- `IFITQUACKS007` is titled _Duck conversion target must be an interface_ and names the conversion (`Duck.As`, `Duck.Stub` or `Duck.Merge`) that was called.
 
 ## [v1.2.0] - 2026-09-17
 
@@ -93,7 +95,8 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 - Anonymous types can be passed to `[DuckTyped]` methods and `Duck.As`.
 - Adapters forward `Equals`, `GetHashCode` and `ToString` to the wrapped instance; `Duck.Unwrap` returns it.
 
-[unreleased]: https://github.com/linkdotnet/IfItQuacks/compare/v1.2.0...HEAD
+[unreleased]: https://github.com/linkdotnet/IfItQuacks/compare/v1.3.0...HEAD
+[v1.3.0]: https://github.com/linkdotnet/IfItQuacks/compare/v1.2.0...v1.3.0
 [v1.2.0]: https://github.com/linkdotnet/IfItQuacks/compare/v1.1.0...v1.2.0
 [v1.1.0]: https://github.com/linkdotnet/IfItQuacks/compare/v1.0.0...v1.1.0
 [v1.0.0]: https://github.com/linkdotnet/IfItQuacks/compare/64a9c6ea49de0a82dd1cd59556dbaebca74381cb...v1.0.0
