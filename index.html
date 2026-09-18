@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+      <title>IfItQuacks: compile-time checked structural typing for C# | IfItQuacks </title>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <meta name="title" content="IfItQuacks: compile-time checked structural typing for C# | IfItQuacks ">
+      <meta name="description" content="Compile-time checked structural (duck) typing for C# via a Roslyn source generator and interceptors.">
+      
+      <link rel="icon" href="images/logo.png">
+      <link rel="stylesheet" href="public/docfx.min.css">
+      <link rel="stylesheet" href="public/main.css">
+      <meta name="docfx:navrel" content="toc.html">
+      <meta name="docfx:tocrel" content="toc.html">
+      
+      <meta name="docfx:rel" content="">
+      
+      
+      <meta name="docfx:docurl" content="https://github.com/linkdotnet/IfItQuacks/blob/main/docs/site/index.md/#L1">
+      <meta name="loc:inThisArticle" content="In this article">
+      <meta name="loc:searchResultsCount" content="{count} results for &quot;{query}&quot;">
+      <meta name="loc:searchNoResults" content="No results for &quot;{query}&quot;">
+      <meta name="loc:tocFilter" content="Filter by title">
+      <meta name="loc:nextArticle" content="Next">
+      <meta name="loc:prevArticle" content="Previous">
+      <meta name="loc:themeLight" content="Light">
+      <meta name="loc:themeDark" content="Dark">
+      <meta name="loc:themeAuto" content="Auto">
+      <meta name="loc:changeTheme" content="Change theme">
+      <meta name="loc:copy" content="Copy">
+      <meta name="loc:downloadPdf" content="Download PDF">
+
+      <script type="module" src="./public/docfx.min.js"></script>
+
+      <script>
+        const theme = localStorage.getItem('theme') || 'auto'
+        document.documentElement.setAttribute('data-bs-theme', theme === 'auto' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme)
+      </script>
+
+  </head>
+
+  <body class="tex2jax_ignore" data-layout="" data-yaml-mime="">
+    <header class="bg-body border-bottom">
+      <nav id="autocollapse" class="navbar navbar-expand-md" role="navigation">
+        <div class="container-xxl flex-nowrap">
+          <a class="navbar-brand" href="index.html">
+            <img id="logo" class="svg" src="images/logo.png" alt="IfItQuacks">
+            IfItQuacks
+          </a>
+          <button class="btn btn-lg d-md-none border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navpanel" aria-controls="navpanel" aria-expanded="false" aria-label="Toggle navigation">
+            <i class="bi bi-three-dots"></i>
+          </button>
+          <div class="collapse navbar-collapse" id="navpanel">
+            <div id="navbar">
+              <form class="search" role="search" id="search">
+                <i class="bi bi-search"></i>
+                <input class="form-control" id="search-query" type="search" disabled placeholder="Search" autocomplete="off" aria-label="Search">
+              </form>
+            </div>
+          </div>
+        </div>
+      </nav>
+    </header>
+
+    <main class="container-xxl">
+
+      <div class="content">
+        <div class="actionbar">
+
+        </div>
+
+        <article data-uid="">
+
+<p><a href="https://www.nuget.org/packages/IfItQuacks/"><img src="https://img.shields.io/nuget/dt/IfItQuacks?style=flat-square" alt="Nuget"></a>
+<a href="https://github.com/linkdotnet/IfItQuacks/releases"><img src="https://img.shields.io/github/v/tag/linkdotnet/IfItQuacks?include_prereleases&amp;logo=github&amp;style=flat-square" alt="GitHub tag"></a></p>
+<img src="images/logo.png" alt="IfItQuacks logo" width="128" height="128">
+<h1 id="ifitquacks-compile-time-checked-structural-typing-for-c">IfItQuacks: compile-time checked structural typing for C#</h1>
+<p>IfItQuacks lets you pass objects of unrelated types to a method, as long as they structurally satisfy an interface. The check happens at compile time and the call is redirected through a generated adapter - no reflection, no <code>dynamic</code>.</p>
+<h2 id="download">Download</h2>
+<p>IfItQuacks is available on <a href="https://www.nuget.org/packages/IfItQuacks/">NuGet</a>.</p>
+<pre><code class="lang-bash">dotnet add package IfItQuacks
+</code></pre>
+<h2 id="example-usage">Example usage</h2>
+<pre><code class="lang-csharp">public interface IDoable
+{
+    void Do();
+}
+
+public class A
+{
+    public void Do() =&gt; Console.WriteLine(&quot;A.Do&quot;);
+}
+
+public static partial class Ops
+{
+    [DuckTyped]
+    public static void Foo(IDoable doable) =&gt; doable.Do();
+}
+
+Ops.Foo(new A()); // A.Do
+</code></pre>
+<p>Under the hood the generator writes a small wrapper that implements the interface and replaces your call so it passes that wrapper instead:</p>
+<pre><code class="lang-csharp">// You write
+Ops.Foo(new A());
+
+// The generator emits (simplified)
+struct A_As_IDoable(A value) : IDoable
+{
+    public void Do() =&gt; value.Do();
+}
+
+// and the compiler actually calls
+Ops.Foo(new A_As_IDoable(new A()));
+</code></pre>
+<p>If <code>A</code> has no matching <code>Do()</code>, the build fails. See <a href="articles/concepts.html">How does it work?</a> for details.</p>
+<p>Head over to <a href="articles/getting_started.html">Getting started</a> for the setup.</p>
+
+</article>
+
+        <div class="contribution d-print-none">
+          <a href="https://github.com/linkdotnet/IfItQuacks/blob/main/docs/site/index.md/#L1" class="edit-link">Edit this page</a>
+        </div>
+
+        <div class="next-article d-print-none border-top" id="nextArticle"></div>
+
+      </div>
+
+      <div class="affix">
+        <nav id="affix"></nav>
+      </div>
+    </main>
+
+    <div class="container-xxl search-results" id="search-results"></div>
+
+    <footer class="border-top text-secondary">
+      <div class="container-xxl">
+        <div class="flex-fill">
+          <span>Made with <a href="https://dotnet.github.io/docfx">docfx</a></span>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

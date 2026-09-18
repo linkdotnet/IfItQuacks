@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+      <title>Getting started | IfItQuacks </title>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <meta name="title" content="Getting started | IfItQuacks ">
+      <meta name="description" content="Compile-time checked structural (duck) typing for C# via a Roslyn source generator and interceptors.">
+      
+      <link rel="icon" href="../images/logo.png">
+      <link rel="stylesheet" href="../public/docfx.min.css">
+      <link rel="stylesheet" href="../public/main.css">
+      <meta name="docfx:navrel" content="../toc.html">
+      <meta name="docfx:tocrel" content="toc.html">
+      
+      <meta name="docfx:rel" content="../">
+      
+      
+      <meta name="docfx:docurl" content="https://github.com/linkdotnet/IfItQuacks/blob/main/docs/site/articles/getting_started.md/#L1">
+      <meta name="loc:inThisArticle" content="In this article">
+      <meta name="loc:searchResultsCount" content="{count} results for &quot;{query}&quot;">
+      <meta name="loc:searchNoResults" content="No results for &quot;{query}&quot;">
+      <meta name="loc:tocFilter" content="Filter by title">
+      <meta name="loc:nextArticle" content="Next">
+      <meta name="loc:prevArticle" content="Previous">
+      <meta name="loc:themeLight" content="Light">
+      <meta name="loc:themeDark" content="Dark">
+      <meta name="loc:themeAuto" content="Auto">
+      <meta name="loc:changeTheme" content="Change theme">
+      <meta name="loc:copy" content="Copy">
+      <meta name="loc:downloadPdf" content="Download PDF">
+
+      <script type="module" src="./../public/docfx.min.js"></script>
+
+      <script>
+        const theme = localStorage.getItem('theme') || 'auto'
+        document.documentElement.setAttribute('data-bs-theme', theme === 'auto' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme)
+      </script>
+
+  </head>
+
+  <body class="tex2jax_ignore" data-layout="" data-yaml-mime="">
+    <header class="bg-body border-bottom">
+      <nav id="autocollapse" class="navbar navbar-expand-md" role="navigation">
+        <div class="container-xxl flex-nowrap">
+          <a class="navbar-brand" href="../index.html">
+            <img id="logo" class="svg" src="../images/logo.png" alt="IfItQuacks">
+            IfItQuacks
+          </a>
+          <button class="btn btn-lg d-md-none border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navpanel" aria-controls="navpanel" aria-expanded="false" aria-label="Toggle navigation">
+            <i class="bi bi-three-dots"></i>
+          </button>
+          <div class="collapse navbar-collapse" id="navpanel">
+            <div id="navbar">
+              <form class="search" role="search" id="search">
+                <i class="bi bi-search"></i>
+                <input class="form-control" id="search-query" type="search" disabled placeholder="Search" autocomplete="off" aria-label="Search">
+              </form>
+            </div>
+          </div>
+        </div>
+      </nav>
+    </header>
+
+    <main class="container-xxl">
+      <div class="toc-offcanvas">
+        <div class="offcanvas-md offcanvas-start" tabindex="-1" id="tocOffcanvas" aria-labelledby="tocOffcanvasLabel">
+          <div class="offcanvas-header">
+            <h5 class="offcanvas-title" id="tocOffcanvasLabel">Table of Contents</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#tocOffcanvas" aria-label="Close"></button>
+          </div>
+          <div class="offcanvas-body">
+            <nav class="toc" id="toc"></nav>
+          </div>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="actionbar">
+          <button class="btn btn-lg border-0 d-md-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#tocOffcanvas" aria-controls="tocOffcanvas" aria-expanded="false" aria-label="Show table of contents">
+            <i class="bi bi-list"></i>
+          </button>
+
+        </div>
+
+        <article data-uid="getting_started">
+<h1 id="getting-started">Getting started</h1>
+
+<h2 id="installation">Installation</h2>
+<pre><code class="lang-bash">dotnet add package IfItQuacks
+</code></pre>
+<p>IfItQuacks is a source generator built on top of <a href="https://github.com/dotnet/roslyn/blob/main/docs/features/interceptors.md">interceptors</a>. Interceptors are opt-in per namespace; the package enables its generated namespace automatically, so no project file changes are needed.</p>
+<h2 id="building-blocks">Building blocks</h2>
+<p>The generator adds the following <code>internal</code> types to the <code>IfItQuacks</code> namespace of your project. Because they are internal, several projects in the same solution can use IfItQuacks without type conflicts:</p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DuckTypedAttribute</code></td>
+<td>Marks a method whose interface parameters accept any type that structurally matches the interface.</td>
+</tr>
+<tr>
+<td><code>Duck</code></td>
+<td><code>Duck.As&lt;TShape&gt;(value)</code> converts a value to an interface it structurally satisfies; <code>Duck.Stub&lt;TShape&gt;(value)</code> fills the rest with members that throw; <code>Duck.Merge&lt;TShape&gt;(first, second)</code> takes each member from the first value providing it; <code>Duck.To&lt;TTarget&gt;(value)</code> copies into a new value; <code>Duck.Unwrap(value)</code> returns the original instance behind an adapter.</td>
+</tr>
+<tr>
+<td><code>DuckTypeMismatchException</code></td>
+<td>Thrown at runtime if a call couldn't be verified at compile time and the value doesn't implement the interface.</td>
+</tr>
+<tr>
+<td><code>DuckStubException</code></td>
+<td>Thrown when a member of a <code>Duck.Stub</code> that nothing implements is used.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="matching-an-interface">Matching an interface</h2>
+<p>Any interface works - your own, the framework's (<code>IDisposable</code>, <code>IEnumerable&lt;T&gt;</code>, ...) or one from another library. No attribute is needed. A type matches if it provides the following members of the interface (including those of base interfaces):</p>
+<table>
+<thead>
+<tr>
+<th>Member</th>
+<th>Matched against</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Methods</td>
+<td>A public instance method with the same name and number of parameters, or a public property or field of a delegate type with a matching signature (see <a href="#members-holding-a-delegate">Members holding a delegate</a>). Its return type has to be assignable to the interface's (a <code>void</code> interface method accepts any return type), and the interface's parameter types have to be assignable to its parameters. <code>ref</code>/<code>out</code>/<code>in</code> parameters must match exactly.</td>
+</tr>
+<tr>
+<td>Properties</td>
+<td>A public instance property or field with the same name, and a public getter/setter where the interface declares one (a field needs to be non-<code>readonly</code> for a setter). A getter's type has to be assignable to the interface's type, a setter's the other way round - with both, the types have to convert in both directions.</td>
+</tr>
+<tr>
+<td>Indexers</td>
+<td>A public indexer with the same accessors, assignable parameter types and a type following the property rules.</td>
+</tr>
+<tr>
+<td>Events</td>
+<td>A public event with the same name and delegate type.</td>
+</tr>
+<tr>
+<td>Default interface members</td>
+<td>Optional. If the type has a matching member, it is used; otherwise the default implementation runs.</td>
+</tr>
+<tr>
+<td><code>static abstract</code> members and operators</td>
+<td>Only for <a href="#static-members-and-operators">duck-typed constraints</a>: a public static member or operator with a matching signature.</td>
+</tr>
+</tbody>
+</table>
+<p>&quot;Assignable&quot; means an implicit identity, reference, boxing, numeric or nullable conversion - just like in an assignment - but no user-defined conversion operators. If several members match, one with exactly the same types wins:</p>
+<pre><code class="lang-csharp">public interface IInventory
+{
+    IEnumerable&lt;string&gt; Items { get; }
+    long Count();
+    void Add(string item);
+}
+
+public class Warehouse
+{
+    public List&lt;string&gt; Items { get; } = [];     // List&lt;string&gt; -&gt; IEnumerable&lt;string&gt;
+    public int Count() =&gt; Items.Count;           // int -&gt; long
+    public bool Add(object item) { /* ... */ }   // string -&gt; object, result is discarded
+}
+</code></pre>
+<p>Types that already implement the interface - directly, explicitly or through variance - are passed through without an adapter. For all others, generic methods (<code>U Map&lt;U&gt;()</code>) and <code>static abstract</code> members can't be adapted and are reported with <a href="diagnostics.html#ifitquacks005"><code>IFITQUACKS005</code></a>.</p>
+<p>The rest of this page uses one interface throughout:</p>
+<pre><code class="lang-csharp">public interface INameable
+{
+    string Name { get; set; }
+}
+</code></pre>
+<h2 id="declaring-a-duck-typed-method">Declaring a duck-typed method</h2>
+<p>A <code>[DuckTyped]</code> method lives in a <code>partial</code> type and has at least one interface parameter. It can be static or an instance method and take any number of other parameters:</p>
+<pre><code class="lang-csharp">public static partial class Greeter
+{
+    [DuckTyped]
+    public static void Greet(INameable nameable) =&gt; Console.WriteLine($&quot;Hello, {nameable.Name}!&quot;);
+}
+
+public partial class Party
+{
+    [DuckTyped]
+    public void Introduce(INameable host, INameable guest, string greeting = &quot;Hello&quot;) =&gt;
+        Console.WriteLine($&quot;{greeting}, {guest.Name}! I'm {host.Name}.&quot;);
+}
+</code></pre>
+<p>Every interface parameter passed by value is duck-typed; all other parameters behave as usual, including <code>ref</code>/<code>out</code>, <code>params</code>, default values and named arguments. See <a href="known_limitations.html">Known limitations</a> for the few signatures that aren't supported.</p>
+<p>Interface parameters that don't need duck typing keep working as before. An implementation, a variable typed as the interface, <code>null</code>, <code>default</code> or an omitted default value are all accepted:</p>
+<pre><code class="lang-csharp">public static partial class Greeter
+{
+    [DuckTyped]
+    public static void Greet(INameable nameable, ILogger? logger = null) { /* ... */ }
+}
+
+Greeter.Greet(new Person(), consoleLogger);    // real ILogger implementation
+Greeter.Greet(new Person(), new FakeLogger()); // a duck
+Greeter.Greet(new Person(), null);
+Greeter.Greet(new Person());
+</code></pre>
+<h2 id="calling-it">Calling it</h2>
+<p>Any type exposing the interface's members publicly can be passed in:</p>
+<pre><code class="lang-csharp">public class Person
+{
+    public string Name { get; set; } = &quot;&quot;;
+}
+
+Greeter.Greet(new Person { Name = &quot;Steven&quot; }); // Hello, Steven!
+</code></pre>
+<p><code>Person</code> does not implement <code>INameable</code>. If it didn't have a public <code>Name</code> property with a getter and setter, the build fails with <a href="diagnostics.html#ifitquacks001"><code>IFITQUACKS001</code></a>.</p>
+<p>Types that already implement the interface are passed through unchanged. Instance methods work the same way, on an explicit receiver or through the implicit <code>this</code>:</p>
+<pre><code class="lang-csharp">var party = new Party();
+party.Introduce(new Person { Name = &quot;Steven&quot; }, new Pet { Name = &quot;Donald&quot; }, greeting: &quot;Quack&quot;);
+</code></pre>
+<h2 id="extension-methods">Extension methods</h2>
+<p>A <code>[DuckTyped]</code> method can be an extension method, which lets the receiver be duck-typed as well:</p>
+<pre><code class="lang-csharp">public static partial class Ops
+{
+    [DuckTyped]
+    public static string Greet(this INameable nameable, string greeting = &quot;Hello&quot;) =&gt; $&quot;{greeting}, {nameable.Name}!&quot;;
+}
+
+new Person { Name = &quot;Steven&quot; }.Greet();          // Hello, Steven!
+new { Name = &quot;Donald&quot; }.Greet(&quot;Quack&quot;);          // Quack, Donald!
+Ops.Greet(new Person { Name = &quot;Steven&quot; }, &quot;Hi&quot;); // calling it as a static method works too
+</code></pre>
+<p>This is the one mode that changes what the rest of your code sees: to make <code>person.Greet()</code> compile, the generated fallback is an extension method with an unconstrained type parameter, so <code>Greet</code> appears on <strong>every</strong> type in scope. A receiver that doesn't fit reports <a href="diagnostics.html#ifitquacks001"><code>IFITQUACKS001</code></a> instead of <code>CS1061</code>.</p>
+<h2 id="generic-interfaces">Generic interfaces</h2>
+<p>Interfaces can be generic, and <code>[DuckTyped]</code> methods can be generic too. The type arguments are inferred from the argument's members:</p>
+<pre><code class="lang-csharp">public interface IContainer&lt;T&gt;
+{
+    T Get();
+}
+
+public class IntBox { public int Get() =&gt; 42; }
+public class Box&lt;T&gt;(T value) { public T Get() =&gt; value; }
+
+public static partial class Ops
+{
+    [DuckTyped]
+    public static T Unwrap&lt;T&gt;(IContainer&lt;T&gt; container) =&gt; container.Get();
+}
+
+int number = Ops.Unwrap(new IntBox());             // T = int
+string text = Ops.Unwrap(new Box&lt;string&gt;(&quot;quack&quot;)); // T = string
+</code></pre>
+<p>Every type parameter of the method has to appear in an interface parameter type, otherwise it can't be inferred (<a href="diagnostics.html#ifitquacks004"><code>IFITQUACKS004</code></a>). Other parameters may use the inferred type parameters, e.g. <code>T Add&lt;T&gt;(IContainer&lt;T&gt; container, T fallback)</code>. Closed generic interfaces like <code>IContainer&lt;int&gt;</code> work on non-generic methods as well.</p>
+<h2 id="delegates-and-method-groups">Delegates and method groups</h2>
+<p>An interface with a single method is satisfied by any matching delegate, lambda or method group - a functional interface, as in TypeScript or Java:</p>
+<pre><code class="lang-csharp">public interface IFormatter { string Format(int value); }
+
+public static partial class Ops
+{
+    [DuckTyped]
+    public static string Render(IFormatter formatter, int value) =&gt; formatter.Format(value);
+}
+
+Func&lt;int, string&gt; hex = value =&gt; $&quot;0x{value:X}&quot;;
+Ops.Render(hex, 255);                          // a delegate variable
+Ops.Render((int value) =&gt; $&quot;{value} EUR&quot;, 42);  // a lambda: parameter types have to be explicit
+Ops.Render(Spell, 3);                          // a method group
+IFormatter formatter = Duck.As&lt;IFormatter&gt;(hex);
+</code></pre>
+<p>The delegate's signature has to match the interface's single method by the usual rules (assignable return and parameter types). Interfaces with more than one required member can't be satisfied by a delegate (<a href="diagnostics.html#ifitquacks001"><code>IFITQUACKS001</code></a>).</p>
+<p>It also works the other way round: a <code>[DuckTyped]</code> method converts to a delegate over the duck type, so it can be passed around as a function:</p>
+<pre><code class="lang-csharp">Func&lt;Person, string&gt; describe = Ops.Describe;   // Describe takes an INamed
+people.Select(Ops.Describe);
+</code></pre>
+<h3 id="members-holding-a-delegate">Members holding a delegate</h3>
+<p>A member whose type is a delegate stands in for the interface method of the same name. That turns an object literal into a test double:</p>
+<pre><code class="lang-csharp">public interface IRepository
+{
+    Order? Find(int id);
+    void Save(Order order);
+}
+
+var repository = Duck.As&lt;IRepository&gt;(new
+{
+    Find = (Func&lt;int, Order?&gt;)(id =&gt; new Order(id, &quot;Rubber duck&quot;)),
+    Save = (Action&lt;Order&gt;)(_ =&gt; { }),
+});
+</code></pre>
+<p>A lambda can't be assigned to an anonymous type property directly (<code>CS0828</code>), so its delegate type has to be written out.</p>
+<h2 id="stubbing-and-merging">Stubbing and merging</h2>
+<p><code>Duck.Stub&lt;TShape&gt;(value)</code> is <code>Duck.As</code> for tests: members the value provides are forwarded, everything else throws <code>DuckStubException</code> when it is used. <code>Duck.Stub&lt;TShape&gt;()</code> stubs the whole interface.</p>
+<pre><code class="lang-csharp">var repository = Duck.Stub&lt;IRepository&gt;(new { Find = (Func&lt;int, Order?&gt;)(id =&gt; new Order(id, &quot;Stubbed&quot;)) });
+
+repository.Find(7);                   // the lambda
+repository.Save(new Order(2, &quot;...&quot;));  // throws DuckStubException
+</code></pre>
+<p>A member that <em>is</em> there but doesn't fit is still reported with <a href="diagnostics.html#ifitquacks001"><code>IFITQUACKS001</code></a> - a stub fills in what is missing, not what is wrong.</p>
+<p><code>Duck.Merge&lt;TShape&gt;(first, second)</code> (and a three-value overload) takes every member from the first value that provides it, which replaces a single member of a real object:</p>
+<pre><code class="lang-csharp">Order? saved = null;
+var spy = Duck.Merge&lt;IRepository&gt;(new { Save = (Action&lt;Order&gt;)(order =&gt; saved = order) }, realRepository);
+
+spy.Save(order);   // the lambda
+spy.Find(1);       // the real repository
+</code></pre>
+<p><code>Duck.Unwrap</code> returns the first value. A member none of the values provides is reported with <a href="diagnostics.html#ifitquacks001"><code>IFITQUACKS001</code></a>.</p>
+<h2 id="sequences">Sequences</h2>
+<p>An <code>IEnumerable&lt;Person&gt;</code> is not an <code>IEnumerable&lt;INameable&gt;</code>, even when every <code>Person</code> fits. Passing one adapts the sequence element by element, lazily:</p>
+<pre><code class="lang-csharp">public static partial class Ops
+{
+    [DuckTyped]
+    public static string Join(IEnumerable&lt;INameable&gt; people) =&gt; string.Join(&quot;, &quot;, people.Select(p =&gt; p.Name));
+}
+
+Ops.Join(new List&lt;Person&gt; { new() { Name = &quot;Steven&quot; } });
+Ops.Join(new[] { new Pet() });
+
+IReadOnlyList&lt;INameable&gt; view = Duck.As&lt;IReadOnlyList&lt;INameable&gt;&gt;(people); // Count and the indexer included
+</code></pre>
+<p>Only <code>IEnumerable&lt;T&gt;</code>, <code>IReadOnlyCollection&lt;T&gt;</code> and <code>IReadOnlyList&lt;T&gt;</code> qualify: they use their element type in output position only. <code>ICollection&lt;T&gt;</code> and <code>IList&lt;T&gt;</code> would need the adaptation to run backwards, so they are not supported.</p>
+<h2 id="static-members-and-operators">Static members and operators</h2>
+<p>Generic math is built on <code>static abstract</code> interface members, which no instance can provide. They are duck-typed through the <strong>constraint</strong> instead of a parameter: mark a generic method whose type parameter is constrained to the interface and use it as a normal parameter type.</p>
+<pre><code class="lang-csharp">public interface IAddable&lt;T&gt; where T : IAddable&lt;T&gt;
+{
+    static abstract T Zero { get; }
+    static abstract T operator +(T left, T right);
+}
+
+public static partial class Ops
+{
+    [DuckTyped]
+    public static T Sum&lt;T&gt;(T first, T second) where T : IAddable&lt;T&gt; =&gt; T.Zero + first + second;
+}
+
+// Money has + and Zero, but doesn't implement IAddable&lt;Money&gt;.
+Money total = Ops.Sum(new Money(19.99m), new Money(5.01m));
+</code></pre>
+<p>The generated adapter is its own type argument (<code>Adapter : IAddable&lt;Adapter&gt;</code>) and forwards the interface's statics and operators to the argument's type, so BCL interfaces work as well:</p>
+<pre><code class="lang-csharp">[DuckTyped]
+public static T Add&lt;T&gt;(T first, T second) where T : System.Numerics.IAdditionOperators&lt;T, T, T&gt; =&gt; first + second;
+</code></pre>
+<p>Instance members of the constraint are forwarded too, as long as their signature doesn't use the self type. Every type parameter needs exactly one interface constraint used by a by-value parameter, the method can't also have interface parameters, and all arguments bound to the same type parameter must have the same type (<a href="diagnostics.html#ifitquacks004"><code>IFITQUACKS004</code></a>).</p>
+<h2 id="converting-explicitly">Converting explicitly</h2>
+<p>Use <code>Duck.As&lt;TShape&gt;(value)</code> when the duck-typed value has to outlive a single call - for example to store it in a field, add it to a collection or return it:</p>
+<pre><code class="lang-csharp">List&lt;INameable&gt; nameables = [Duck.As&lt;INameable&gt;(new Person()), Duck.As&lt;INameable&gt;(new Pet())];
+</code></pre>
+<p>The same compile-time checks apply as for <code>[DuckTyped]</code> methods. The type argument must be an interface (<a href="diagnostics.html#ifitquacks007"><code>IFITQUACKS007</code></a>). That includes framework interfaces, so anything with a <code>Dispose()</code> method works with <code>using</code>:</p>
+<pre><code class="lang-csharp">using (Duck.As&lt;IDisposable&gt;(new TemporaryFile(&quot;quack.tmp&quot;)))
+{
+    // ...
+}
+</code></pre>
+<h2 id="anonymous-types">Anonymous types</h2>
+<p>Anonymous types can be passed to <code>[DuckTyped]</code> methods and <code>Duck.As</code> like any other type - handy for tests and quick stubs, much like object literals in TypeScript:</p>
+<pre><code class="lang-csharp">Greeter.Greet(new { Name = &quot;Steven&quot; });
+
+IPerson stub = Duck.As&lt;IPerson&gt;(new { Name = &quot;Donald&quot;, Age = 90, Hometown = &quot;Duckburg&quot; });
+</code></pre>
+<p>Anonymous type properties are read-only, so interfaces with setters, methods, indexers or events can't be satisfied. Nested anonymous types are supported; a property whose type only contains an anonymous type (e.g. <code>new[] { new { A = 1 } }</code>) and generic <code>[DuckTyped]</code> methods are not (<a href="diagnostics.html#ifitquacks001"><code>IFITQUACKS001</code></a>).</p>
+<h2 id="identity">Identity</h2>
+<p>Adapters forward <code>Equals</code>, <code>GetHashCode</code> and <code>ToString</code> to the original instance, so two adapters of the same object are equal and collapse in a <code>HashSet</code> or as dictionary keys. <code>Duck.Unwrap</code> gives you the original instance back:</p>
+<pre><code class="lang-csharp">var person = new Person();
+INameable a = Duck.As&lt;INameable&gt;(person), b = Duck.As&lt;INameable&gt;(person);
+
+a.Equals(b);                        // true
+new HashSet&lt;INameable&gt; { a, b }.Count; // 1
+Duck.Unwrap(a) is Person;           // true
+ReferenceEquals(a, b);              // false - every conversion creates a new adapter
+</code></pre>
+<h3 id="a-view-not-a-mapper">A view, not a mapper</h3>
+<p><code>Duck.As</code> doesn't copy anything. The returned object forwards to the original instance:</p>
+<pre><code class="lang-csharp">var customer = new Customer { Name = &quot;Steven&quot;, Email = &quot;steven@example.com&quot; };
+var view = Duck.As&lt;ICustomerView&gt;(customer); // ICustomerView { string Name { get; } string Email { get; } }
+
+customer.Email = &quot;quack@example.com&quot;;
+Console.WriteLine(view.Email); // quack@example.com
+</code></pre>
+<p>That makes it a cheap way to expose a narrower view of a type, e.g. hiding members of an entity behind a get-only interface.</p>
+<h3 id="copying-with-duckto">Copying with <code>Duck.To</code></h3>
+<p>When you need a value of its own instead of a view, <code>Duck.To&lt;TTarget&gt;(value)</code> builds one. The target is a concrete type, not an interface, and the call is replaced by an object creation - nothing forwards afterwards:</p>
+<pre><code class="lang-csharp">public record CustomerDto(string Name, string Email);
+
+var dto = Duck.To&lt;CustomerDto&gt;(customer);  // new CustomerDto(customer.Name, customer.Email)
+customer.Email = &quot;quack@example.com&quot;;
+Console.WriteLine(dto.Email);              // steven@example.com - the copy is its own value
+</code></pre>
+<p>The target is filled through the constructor taking the most parameters the source can fill, and every remaining settable property or field is set from the member of the same name. Anything the source can't fill is reported with <a href="diagnostics.html#ifitquacks009"><code>IFITQUACKS009</code></a>.</p>
+<p><code>Duck.To</code> is not a mapping library either: name for name, assignable types, no renaming, no nested projection and no user-defined conversions - the same rules as everywhere else.</p>
+<p>Runnable examples live in <a href="https://github.com/linkdotnet/IfItQuacks/tree/main/samples"><code>samples</code></a>, one project per showcase:</p>
+<table>
+<thead>
+<tr>
+<th>Project</th>
+<th>Shows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>IfItQuacks.Sample.Methods</code></td>
+<td>Static and instance <code>[DuckTyped]</code> methods with several parameters, including an optional interface parameter</td>
+</tr>
+<tr>
+<td><code>IfItQuacks.Sample.Properties</code></td>
+<td>Read-write properties, satisfied by properties and fields</td>
+</tr>
+<tr>
+<td><code>IfItQuacks.Sample.Assignability</code></td>
+<td>Compatible instead of identical member types, fields as properties</td>
+</tr>
+<tr>
+<td><code>IfItQuacks.Sample.AnonymousTypes</code></td>
+<td>Anonymous types for <code>[DuckTyped]</code> methods and <code>Duck.As</code></td>
+</tr>
+<tr>
+<td><code>IfItQuacks.Sample.Generics</code></td>
+<td>Generic interfaces and generic <code>[DuckTyped]</code> methods</td>
+</tr>
+<tr>
+<td><code>IfItQuacks.Sample.FrameworkInterfaces</code></td>
+<td><code>IEnumerable&lt;T&gt;</code> parameters and <code>Duck.As&lt;IDisposable&gt;</code> with <code>using</code></td>
+</tr>
+<tr>
+<td><code>IfItQuacks.Sample.Conversion</code></td>
+<td><code>Duck.As</code> for collections and read-only views, identity and <code>Duck.Unwrap</code></td>
+</tr>
+<tr>
+<td><code>IfItQuacks.Sample.Members</code></td>
+<td>Events, indexers, <code>ref</code> returns and default interface members</td>
+</tr>
+<tr>
+<td><code>IfItQuacks.Sample.Signatures</code></td>
+<td><code>ref</code>/<code>out</code>/<code>params</code> parameters, <code>private</code> methods, methods on a struct and the runtime fallback</td>
+</tr>
+<tr>
+<td><code>IfItQuacks.Sample.Delegates</code></td>
+<td>Delegates, lambdas and method groups as ducks, and <code>[DuckTyped]</code> methods as delegates</td>
+</tr>
+<tr>
+<td><code>IfItQuacks.Sample.GenericMath</code></td>
+<td><code>static abstract</code> members and operators through duck-typed constraints</td>
+</tr>
+<tr>
+<td><code>IfItQuacks.Sample.Extensions</code></td>
+<td><code>[DuckTyped]</code> extension methods, including a duck-typed receiver</td>
+</tr>
+<tr>
+<td><code>IfItQuacks.Sample.Sequences</code></td>
+<td><code>IEnumerable&lt;T&gt;</code> and <code>IReadOnlyList&lt;T&gt;</code> parameters adapted element by element</td>
+</tr>
+<tr>
+<td><code>IfItQuacks.Sample.Testing</code></td>
+<td>Delegate members, <code>Duck.Stub</code> and <code>Duck.Merge</code> as test doubles</td>
+</tr>
+<tr>
+<td><code>IfItQuacks.Sample.Copying</code></td>
+<td><code>Duck.To</code> for records and settable types</td>
+</tr>
+</tbody>
+</table>
+
+</article>
+
+        <div class="contribution d-print-none">
+          <a href="https://github.com/linkdotnet/IfItQuacks/blob/main/docs/site/articles/getting_started.md/#L1" class="edit-link">Edit this page</a>
+        </div>
+
+        <div class="next-article d-print-none border-top" id="nextArticle"></div>
+
+      </div>
+
+      <div class="affix">
+        <nav id="affix"></nav>
+      </div>
+    </main>
+
+    <div class="container-xxl search-results" id="search-results"></div>
+
+    <footer class="border-top text-secondary">
+      <div class="container-xxl">
+        <div class="flex-fill">
+          <span>Made with <a href="https://dotnet.github.io/docfx">docfx</a></span>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

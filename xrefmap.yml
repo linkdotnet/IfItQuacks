@@ -1,0 +1,18 @@
+### YamlMime:XRefMap
+sorted: true
+references:
+- uid: benchmarks
+  name: Benchmarks
+  href: articles/benchmarks.html
+- uid: concepts
+  name: How does it work?
+  href: articles/concepts.html
+- uid: diagnostics
+  name: Diagnostics
+  href: articles/diagnostics.html
+- uid: getting_started
+  name: Getting started
+  href: articles/getting_started.html
+- uid: known_limitations
+  name: Known limitations
+  href: articles/known_limitations.html
