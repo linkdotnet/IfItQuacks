@@ -52,10 +52,26 @@ internal static class Diagnostics
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
+    public static readonly DiagnosticDescriptor UnsupportedCall = new(
+        id: "IFITQUACKS008",
+        title: "Unsupported duck-typed call",
+        messageFormat: "Call to '{0}' cannot be duck-typed: {1}",
+        category: "IfItQuacks",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor UnsupportedConversionTarget = new(
+        id: "IFITQUACKS009",
+        title: "Unsupported Duck.To target",
+        messageFormat: "Type '{0}' cannot be built from '{1}': {2}",
+        category: "IfItQuacks",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
     public static readonly DiagnosticDescriptor ConversionTargetNotShape = new(
         id: "IFITQUACKS007",
-        title: "Duck.As type argument must be an interface",
-        messageFormat: "'Duck.As<{0}>' requires an interface",
+        title: "Duck conversion target must be an interface",
+        messageFormat: "'Duck.{0}<{1}>' requires an interface",
         category: "IfItQuacks",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);

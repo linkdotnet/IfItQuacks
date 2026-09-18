@@ -22,6 +22,8 @@ A method group only converts to a delegate whose parameter types are known at th
 
 The fallback is the generated overload that accepts anything and casts at runtime. It works if the value implements the interface and throws `DuckTypeMismatchException` otherwise.
 
+One call shape can't be redirected at all: `base.Greet(duck)` invokes the method non-virtually, which neither an interceptor nor the fallback can reproduce, so it is reported with [`IFITQUACKS008`](diagnostics.md#ifitquacks008).
+
 ## Matching uses the static type
 
 The generator only sees the type the compiler wrote down at the call site.
@@ -55,7 +57,6 @@ public static partial class Ops
 {
     [DuckTyped] public static string A(INamed n) => n.Name;           // works
     [DuckTyped] public static string A(INamed n, int i) => n.Name;    // IFITQUACKS004: one [DuckTyped] method per name
-    [DuckTyped] public static string B(this INamed n) => n.Name;      // IFITQUACKS004: extension method
     [DuckTyped] public static string C(ref INamed n) => n.Name;       // IFITQUACKS003: no interface parameter by value
     [DuckTyped] public static T D<T>(INamed n, T value) => value;     // IFITQUACKS004: T unused by an interface parameter
 }
@@ -120,9 +121,41 @@ Duck.As<ITwoMembers>(comparison);           // IFITQUACKS001: a delegate can onl
 Ops.Render((a, b) => a - b, 1);             // CS8917: an untyped lambda has no natural type - write (int a, int b)
 ```
 
+## Sequences
+
+Only interfaces using their element type in output position are adapted element by element, and only one level deep:
+
+```csharp
+Ops.Join(new List<Person>());              // works: IEnumerable<INamed>
+Duck.As<IReadOnlyList<INamed>>(people);    // works: Count and the indexer included
+Duck.As<IList<INamed>>(people);            // IFITQUACKS001: Add(INamed) would have to run backwards
+Duck.As<IEnumerable<IEnumerable<INamed>>>(groups); // IFITQUACKS001: not nested
+```
+
+Every enumeration allocates one wrapper plus one adapter per element, so a sequence you walk repeatedly is cheaper materialised once.
+
+## Copying with `Duck.To`
+
+`Duck.To` matches members by name and assignable type, like everything else, and stops there:
+
+```csharp
+Duck.To<CustomerDto>(customer);               // works
+Duck.To<INamed>(customer);                    // IFITQUACKS009: interfaces are Duck.As' job
+Duck.To<CustomerDto>(new { FullName = "x" }); // IFITQUACKS009: no renaming
+Duck.To<OrderDto>(order);                     // IFITQUACKS009 if a nested object would have to be converted too
+```
+
+Constructor parameters are matched to source members by name, ignoring case. A target with an inaccessible constructor, an abstract target and a `ref struct` target are all reported.
+
 ## Anonymous types
 
-Their properties are read-only, so only interfaces with get-only properties can be satisfied. A property whose type *contains* an anonymous type can't be named by the generated adapter.
+Their properties are read-only, so only interfaces with get-only properties can be satisfied. A member holding a delegate satisfies an interface *method*, but a lambda can't be assigned to an anonymous type property (`CS0828`), so its delegate type has to be written out:
+
+```csharp
+Duck.As<IRepository>(new { Find = (Func<int, Order?>)(id => ...) }); // works
+Duck.As<IRepository>(new { Find = (int id) => ... });                // CS0828
+```
+ A property whose type *contains* an anonymous type can't be named by the generated adapter.
 
 ```csharp
 Duck.As<INamed>(new { Name = "Steven" });                 // works
@@ -168,6 +201,10 @@ view.Equals(other);            // true
 ReferenceEquals(view, other);  // false - two boxed adapters
 Duck.Unwrap(view) == person;   // true
 ```
+
+## Extension methods
+
+The generated fallback for a `[DuckTyped]` extension method has an unconstrained type parameter, so the method shows up on every type in scope and a receiver that doesn't fit reports [`IFITQUACKS001`](diagnostics.md#ifitquacks001) rather than `CS1061`. Keep such methods in a namespace you import deliberately.
 
 ## Generated code is part of your type
 

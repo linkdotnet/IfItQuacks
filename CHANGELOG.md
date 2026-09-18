@@ -6,6 +6,34 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 ## [Unreleased]
 
+### Added
+
+- `[DuckTyped]` extension methods: the receiver is duck-typed too, so `person.Greet()` works for any type fitting the interface. Previously reported with `IFITQUACKS004`.
+
+- A public property or field of a delegate type satisfies an interface **method** of the same name, which makes an object literal a test double: `Duck.As<IRepository>(new { Find = (Func<int, Order?>)(id => ...) })`.
+
+- `Duck.Stub<TShape>(value)` and `Duck.Stub<TShape>()` return a test double that forwards the members the value provides and throws `DuckStubException` for the rest. A member that is present but doesn't fit is still reported with `IFITQUACKS001`.
+
+- `Duck.Merge<TShape>(first, second)` (and a three-value overload) builds one interface from several values, taking each member from the first value providing it - a spy or a partial fake without a mocking library.
+
+- Sequences are adapted element by element: `IEnumerable<T>`, `IReadOnlyCollection<T>` and `IReadOnlyList<T>` parameters accept a `List<Person>` or a `Person[]` whose elements fit, and `Duck.As<IReadOnlyList<INamed>>(people)` keeps `Count` and the indexer.
+
+- `Duck.To<TTarget>(value)` copies a value into a new one of a concrete type, filling the constructor and the remaining settable members from the members of the same name. Diagnostic `IFITQUACKS009`.
+
+- Samples: `IfItQuacks.Sample.Extensions`, `IfItQuacks.Sample.Sequences`, `IfItQuacks.Sample.Testing` and `IfItQuacks.Sample.Copying`.
+
+### Fixed
+
+- `greeter?.Greet(duck)` is intercepted. A conditional access used to fall through to the runtime fallback and throw `DuckTypeMismatchException` although the call was right there in the project.
+
+- `base.Greet(duck)` no longer silently calls the overriding method. A `base` call is not virtual, which neither an interceptor nor the fallback overload can reproduce, so it is reported with the new `IFITQUACKS008`.
+
+- An argument typed as `Person?` shares the adapter generated for `Person` instead of getting a second one whose generated code warned about a possible null dereference.
+
+### Changed
+
+- `IFITQUACKS007` is titled *Duck conversion target must be an interface* and names the conversion (`Duck.As`, `Duck.Stub` or `Duck.Merge`) that was called.
+
 ## [v1.2.0] - 2026-09-17
 
 ### Added

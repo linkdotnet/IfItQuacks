@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text;
 using Microsoft.CodeAnalysis;
 
@@ -7,10 +8,13 @@ internal static class AdapterEmitter
 {
     private const string CastByExample = "__CastByExample";
 
-    public static string GetAdapterName(INamedTypeSymbol shape, INamedTypeSymbol concreteType) =>
+    public static string GetAdapterName(INamedTypeSymbol shape, INamedTypeSymbol concreteType, string prefix = "ShapeAdapter") =>
         concreteType.IsAnonymousType
-            ? $"ShapeAdapter_{Sanitize(shape.ToDisplayString())}_Anonymous_{Sanitize(AnonymousWitness(concreteType))}"
-            : $"ShapeAdapter_{Sanitize(shape.ToDisplayString())}_{Sanitize(concreteType.ToDisplayString())}";
+            ? $"{prefix}_{Sanitize(shape.ToDisplayString())}_Anonymous_{Sanitize(AnonymousWitness(concreteType))}"
+            : $"{prefix}_{Sanitize(shape.ToDisplayString())}_{Sanitize(concreteType.ToDisplayString())}";
+
+    public static string GetStubAdapterName(INamedTypeSymbol shape, INamedTypeSymbol? concreteType) =>
+        concreteType is null ? $"StubAdapter_{Sanitize(shape.ToDisplayString())}" : GetAdapterName(shape, concreteType, "StubAdapter");
 
     public static string? FindUnnameableProperty(INamedTypeSymbol anonymousType) =>
         anonymousType.GetMembers().OfType<IPropertySymbol>()
@@ -48,6 +52,76 @@ internal static class AdapterEmitter
         return sb.ToString();
     }
 
+    /// <summary>Emits a stub: every member <paramref name="concreteType"/> provides forwards to it, the rest throws.</summary>
+    public static string EmitStub(INamedTypeSymbol shape, INamedTypeSymbol? concreteType, string adapterName, Compilation compilation)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"    internal readonly struct {adapterName} : global::{shape.ToDisplayString()}, global::IfItQuacks.IDuckAdapter");
+        sb.AppendLine("    {");
+
+        if (concreteType is null)
+        {
+            sb.AppendLine("        object? global::IfItQuacks.IDuckAdapter.Value => null;");
+            EmitStubMembers(sb, ShapeMatcher.GetShapeMembers(shape).Where(ShapeMatcher.IsRequired));
+        }
+        else
+        {
+            var valueTypeName = concreteType.IsAnonymousType ? "object" : concreteType.ToDisplayString();
+            var receiver = concreteType.IsAnonymousType
+                ? $"{CastByExample}(_value, static () => {AnonymousWitness(concreteType)})"
+                : "_value";
+
+            sb.AppendLine($"        private readonly {valueTypeName} _value;");
+            sb.AppendLine($"        public {adapterName}({valueTypeName} value) => _value = value;");
+            sb.AppendLine("        object? global::IfItQuacks.IDuckAdapter.Value => _value;");
+
+            EmitInstanceMembers(sb, shape, concreteType, receiver, compilation, Owner);
+            EmitStubMembers(sb, ShapeMatcher.FindUnimplementedMembers(shape, concreteType, compilation));
+            EmitIdentityMembers(sb, concreteType);
+
+            if (concreteType.IsAnonymousType)
+                sb.AppendLine($"        private static T {CastByExample}<T>(object value, global::System.Func<T> example) => (T)value;");
+        }
+
+        sb.AppendLine("    }");
+        return sb.ToString();
+    }
+
+    private static void EmitStubMembers(StringBuilder sb, IEnumerable<ISymbol> members)
+    {
+        foreach (var member in members)
+        {
+            var thrown = $"throw new global::IfItQuacks.DuckStubException(\"{MemberName(member)}\")";
+            switch (member)
+            {
+                case IMethodSymbol method:
+                    sb.AppendLine($"        {Utilities.RefReturnPrefix(method.RefKind)}{method.ReturnType.ToDisplayString()} {Owner(method)}.{method.Name}{TypeParameters(method)}({FormatParameters(method.Parameters)}) => {thrown};");
+                    break;
+                case IPropertySymbol { IsIndexer: true } indexer:
+                    sb.Append($"        {Utilities.RefReturnPrefix(indexer.RefKind)}{indexer.Type.ToDisplayString()} {Owner(indexer)}.this[{FormatParameters(indexer.Parameters)}] {{ ");
+                    if (indexer.GetMethod is not null) sb.Append($"get => {thrown}; ");
+                    if (indexer.SetMethod is { } indexerSetter) sb.Append($"{SetterKeyword(indexerSetter)} => {thrown}; ");
+                    sb.AppendLine("}");
+                    break;
+                case IPropertySymbol property:
+                    sb.Append($"        {Utilities.RefReturnPrefix(property.RefKind)}{property.Type.ToDisplayString()} {Owner(property)}.{property.Name} {{ ");
+                    if (property.GetMethod is not null) sb.Append($"get => {thrown}; ");
+                    if (property.SetMethod is { } setter) sb.Append($"{SetterKeyword(setter)} => {thrown}; ");
+                    sb.AppendLine("}");
+                    break;
+                case IEventSymbol @event:
+                    sb.AppendLine($"        event {@event.Type.ToDisplayString()} {Owner(@event)}.{@event.Name} {{ add => {thrown}; remove => {thrown}; }}");
+                    break;
+            }
+        }
+    }
+
+    private static string MemberName(ISymbol member) =>
+        member.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+
+    private static string TypeParameters(IMethodSymbol method) =>
+        method.IsGenericMethod ? $"<{string.Join(", ", method.TypeParameters.Select(tp => tp.Name))}>" : "";
+
     /// <summary>Emits the interface's instance members as explicit implementations forwarding to <paramref name="receiver"/>.</summary>
     public static void EmitInstanceMembers(StringBuilder sb, INamedTypeSymbol shape, INamedTypeSymbol concreteType, string receiver,
         Compilation compilation, Func<ISymbol, string> owner)
@@ -58,23 +132,79 @@ internal static class AdapterEmitter
             if (counterpart is null)
                 continue;
 
-            var memberReceiver = Qualify(receiver, concreteType, counterpart);
-            switch (member)
-            {
-                case IMethodSymbol method:
-                    EmitMethod(sb, method, (IMethodSymbol)counterpart, memberReceiver, owner);
-                    break;
-                case IPropertySymbol { IsIndexer: true } indexer:
-                    EmitIndexer(sb, indexer, memberReceiver, owner);
-                    break;
-                case IPropertySymbol property:
-                    EmitProperty(sb, property, memberReceiver, owner);
-                    break;
-                case IEventSymbol @event:
-                    EmitEvent(sb, @event, memberReceiver, owner);
-                    break;
-            }
+            EmitMember(sb, member, counterpart, Qualify(receiver, concreteType, counterpart), owner);
         }
+    }
+
+    private static void EmitMember(StringBuilder sb, ISymbol member, ISymbol counterpart, string receiver, Func<ISymbol, string> owner)
+    {
+        switch (member)
+        {
+            case IMethodSymbol method when counterpart is IMethodSymbol target:
+                EmitMethod(sb, method, target, receiver, owner);
+                break;
+            case IMethodSymbol method:
+                EmitDelegateMethod(sb, method, counterpart, receiver, owner);
+                break;
+            case IPropertySymbol { IsIndexer: true } indexer:
+                EmitIndexer(sb, indexer, receiver, owner);
+                break;
+            case IPropertySymbol property:
+                EmitProperty(sb, property, receiver, owner);
+                break;
+            case IEventSymbol @event:
+                EmitEvent(sb, @event, receiver, owner);
+                break;
+        }
+    }
+
+    public static string GetMergeAdapterName(INamedTypeSymbol shape, IEnumerable<INamedTypeSymbol> sources) =>
+        $"MergeAdapter_{Sanitize(shape.ToDisplayString())}_" +
+        string.Join("_", sources.Select(s => Sanitize(s.IsAnonymousType ? AnonymousWitness(s) : s.ToDisplayString())));
+
+    /// <summary>Emits an adapter taking each interface member from the first source that provides it.</summary>
+    public static string EmitMerge(INamedTypeSymbol shape, ImmutableArray<INamedTypeSymbol> sources, string adapterName, Compilation compilation)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"    internal readonly struct {adapterName} : global::{shape.ToDisplayString()}, global::IfItQuacks.IDuckAdapter");
+        sb.AppendLine("    {");
+
+        for (var i = 0; i < sources.Length; i++)
+            sb.AppendLine($"        private readonly {(sources[i].IsAnonymousType ? "object" : sources[i].ToDisplayString())} _value{i};");
+
+        var parameters = string.Join(", ", sources.Select((s, i) => $"{(s.IsAnonymousType ? "object" : s.ToDisplayString())} value{i}"));
+        var assignments = string.Join(" ", sources.Select((_, i) => $"_value{i} = value{i};"));
+        sb.AppendLine($"        public {adapterName}({parameters}) {{ {assignments} }}");
+        sb.AppendLine("        object? global::IfItQuacks.IDuckAdapter.Value => _value0;");
+
+        foreach (var member in ShapeMatcher.GetShapeMembers(shape))
+        {
+            var source = FindSource(sources, member, compilation);
+            if (source is not { } found)
+                continue;
+
+            var receiver = sources[found.Index].IsAnonymousType
+                ? $"{CastByExample}(_value{found.Index}, static () => {AnonymousWitness(sources[found.Index])})"
+                : $"_value{found.Index}";
+            EmitMember(sb, member, found.Counterpart, Qualify(receiver, sources[found.Index], found.Counterpart), Owner);
+        }
+
+        EmitIdentityMembers(sb, sources[0], "_value0");
+
+        if (sources.Any(s => s.IsAnonymousType))
+            sb.AppendLine($"        private static T {CastByExample}<T>(object value, global::System.Func<T> example) => (T)value;");
+
+        sb.AppendLine("    }");
+        return sb.ToString();
+    }
+
+    /// <summary>The first source providing <paramref name="member"/>, or <c>null</c> if none does.</summary>
+    public static (int Index, ISymbol Counterpart)? FindSource(ImmutableArray<INamedTypeSymbol> sources, ISymbol member, Compilation compilation)
+    {
+        for (var i = 0; i < sources.Length; i++)
+            if (ShapeMatcher.FindCounterpart(member, sources[i], compilation) is { } counterpart)
+                return (i, counterpart);
+        return null;
     }
 
     // Members are implemented explicitly, so interfaces inheriting same-named members (IEnumerable<T>.GetEnumerator) or declaring object members don't clash.
@@ -87,6 +217,18 @@ internal static class AdapterEmitter
                 ? Utilities.Argument(p)
                 : $"({counterpart.Parameters[i].Type.ToDisplayString()}){Utilities.Identifier(p.Name)}"));
         sb.AppendLine($"        {Utilities.RefReturnPrefix(method.RefKind)}{method.ReturnType.ToDisplayString()} {owner(method)}.{method.Name}({parameters}) => {RefExpressionPrefix(method.RefKind)}{receiver}.{counterpart.Name}({args});");
+    }
+
+    // A member holding a delegate implements the interface method through its Invoke.
+    private static void EmitDelegateMethod(StringBuilder sb, IMethodSymbol method, ISymbol counterpart, string receiver, Func<ISymbol, string> owner)
+    {
+        var invoke = ShapeMatcher.DelegateTypeOf(counterpart)!.DelegateInvokeMethod!;
+        var args = string.Join(", ", method.Parameters.Select((p, i) =>
+            SymbolEqualityComparer.Default.Equals(p.Type, invoke.Parameters[i].Type)
+                ? Utilities.Argument(p)
+                : $"({invoke.Parameters[i].Type.ToDisplayString()}){Utilities.Identifier(p.Name)}"));
+        sb.AppendLine($"        {Utilities.RefReturnPrefix(method.RefKind)}{method.ReturnType.ToDisplayString()} {owner(method)}.{method.Name}({FormatParameters(method.Parameters)}) => " +
+                      $"{RefExpressionPrefix(method.RefKind)}{receiver}.{counterpart.Name}({args});");
     }
 
     private static void EmitProperty(StringBuilder sb, IPropertySymbol property, string receiver, Func<ISymbol, string> owner)
@@ -110,12 +252,12 @@ internal static class AdapterEmitter
         sb.AppendLine($"        event {@event.Type.ToDisplayString()} {owner(@event)}.{@event.Name} {{ add => {receiver}.{@event.Name} += value; remove => {receiver}.{@event.Name} -= value; }}");
 
     // Adapters are boxed as the shape, so without forwarding two views of the same instance would neither be equal nor hash alike.
-    public static void EmitIdentityMembers(StringBuilder sb, INamedTypeSymbol concreteType)
+    public static void EmitIdentityMembers(StringBuilder sb, ITypeSymbol concreteType, string field = "_value")
     {
         var isReference = concreteType.IsReferenceType;
-        sb.AppendLine("        public override bool Equals(object? obj) => global::System.Object.Equals(_value, global::IfItQuacks.Duck.Unwrap(obj));");
-        sb.AppendLine($"        public override int GetHashCode() => {(isReference ? "_value?.GetHashCode() ?? 0" : "_value.GetHashCode()")};");
-        sb.AppendLine($"        public override string ToString() => {(isReference ? "_value?.ToString()" : "_value.ToString()")} ?? string.Empty;");
+        sb.AppendLine($"        public override bool Equals(object? obj) => global::System.Object.Equals({field}, global::IfItQuacks.Duck.Unwrap(obj));");
+        sb.AppendLine($"        public override int GetHashCode() => {(isReference ? $"{field}?.GetHashCode() ?? 0" : $"{field}.GetHashCode()")};");
+        sb.AppendLine($"        public override string ToString() => {(isReference ? $"{field}?.ToString()" : $"{field}.ToString()")} ?? string.Empty;");
     }
 
     // A member of the concrete type can hide the inherited one the shape was matched against, so the receiver is cast to its declaring type.

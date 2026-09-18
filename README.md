@@ -76,6 +76,27 @@ public class Warehouse
 }
 ```
 
+### Test doubles without a mocking library
+
+A member holding a delegate satisfies an interface method, `Duck.Stub` throws for everything that is missing, and `Duck.Merge` replaces a single member of a real object:
+
+```csharp
+var repository = Duck.Stub<IRepository>(new { Find = (Func<int, Order?>)(id => new Order(id, "Rubber duck")) });
+
+Order? saved = null;
+var spy = Duck.Merge<IRepository>(new { Save = (Action<Order>)(order => saved = order) }, realRepository);
+```
+
+### Copies, not only views
+
+`Duck.As` returns a view that forwards; `Duck.To` builds a value of its own, verified the same way:
+
+```csharp
+public record CustomerDto(string Name, string Email);
+
+var dto = Duck.To<CustomerDto>(customer); // new CustomerDto(customer.Name, customer.Email)
+```
+
 ### Fields count as properties
 
 ```csharp
@@ -97,6 +118,8 @@ Duck.Unwrap(Duck.As<INamed>(person)) is Person;          // true
 ### And more
 
 - Any interface works, including framework ones: `Duck.As<IDisposable>(x)`, `IEnumerable<T>` parameters, ...
+- Extension methods: `[DuckTyped] static string Greet(this INamed n)` makes `person.Greet()` work
+- Sequences are adapted element by element, so a `List<Person>` is an `IEnumerable<INamed>`
 - Interface parameters that don't need duck typing (an `ILogger`, say) keep accepting implementations, `null` and default values
 - Generic interfaces (`IContainer<T>`) and generic `[DuckTyped]` methods with inferred type arguments
 - Events, indexers and default interface members

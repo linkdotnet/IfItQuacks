@@ -137,6 +137,71 @@ public static string Describe(global::Person named) =>
     Describe(new global::IfItQuacks.Generated.ShapeAdapter_INamed_Person(named));
 ```
 
+## Extension methods
+
+An instance call is intercepted *by* a static extension method, which is exactly the shape a `[DuckTyped]` extension method needs. Both the fallback and the interceptor keep the `this`:
+
+```csharp
+// [DuckTyped] public static string Greet(this INamed named)
+public static string Greet<TDuck0>(this TDuck0 named) { /* runtime cast */ }
+
+[InterceptsLocation(...)]
+public static string Interceptor_1(this Person named) =>
+    global::Ops.Greet((global::INamed)(new ShapeAdapter_INamed_Person(named)));
+```
+
+The same method called as `Ops.Greet(person)` is a static call, so its interceptor is a plain static method. Because the receiver isn't part of the argument list, the generator maps it to the first parameter itself.
+
+## Stubs and merged adapters
+
+`Duck.Stub` emits the same adapter as `Duck.As`, plus an implementation for every interface member the value doesn't provide:
+
+```csharp
+internal readonly struct StubAdapter_IRepository_Anonymous_... : IRepository, IDuckAdapter
+{
+    Order? global::IRepository.Find(int id) => __CastByExample(_value, ...).Find(id);
+    void global::IRepository.Save(Order order) => throw new DuckStubException("void IRepository.Save(Order order)");
+}
+```
+
+`Duck.Merge` holds one field per value and takes every member from the first field providing it. `IDuckAdapter.Value`, `Equals`, `GetHashCode` and `ToString` forward to the first value.
+
+## Sequences
+
+A sequence argument gets two generated types: the element adapter, and a wrapper implementing the collection interface that applies it while enumerating.
+
+```csharp
+internal readonly struct SequenceAdapter_IEnumerable_INamed__List_Person_ : IEnumerable<INamed>, IDuckAdapter
+{
+    private readonly List<Person> _value;
+
+    IEnumerator<INamed> IEnumerable<INamed>.GetEnumerator()
+    {
+        foreach (var item in (IEnumerable<Person>)_value)
+            yield return (INamed)(new ShapeAdapter_INamed_Person(item));
+    }
+}
+```
+
+`IReadOnlyCollection<T>` adds `Count` and `IReadOnlyList<T>` the indexer, both forwarded to the source. Nothing is copied, so the wrapper stays a view - and each enumeration allocates one adapter per element.
+
+## Duck.To
+
+`Duck.To` is the one conversion that emits no adapter at all. The call is replaced by a factory that reads every member once:
+
+```csharp
+internal static class CopyFactory_CustomerDto_Customer
+{
+    public static CustomerDto Create(global::Customer value) => new global::CustomerDto(value.Name, value.Email);
+}
+
+[InterceptsLocation(...)]
+public static global::CustomerDto Interceptor_3(object value) =>
+    global::IfItQuacks.Generated.CopyFactory_CustomerDto_Customer.Create((global::Customer)value);
+```
+
+The constructor taking the most parameters the source can fill wins; everything else it can set goes into an object initializer, so `init` and `required` members work.
+
 ## Duck-typed constraints
 
 `static abstract` members can't be reached through an instance, so they are matched through a constraint (`where T : IAddable<T>`). The adapter becomes its own type argument, forwards the statics and operators to the wrapped type and converts back:
@@ -168,6 +233,8 @@ Nothing here is free, but nothing is hidden either. The generated code is what y
 | Argument already implements the interface | Passed through (`[DuckTyped]`) or cast (`Duck.As`). | none |
 | `readonly struct` via `[DuckTyped]` | The interceptor takes the struct by value; the adapter holding a copy is boxed. | one object: 16 bytes + struct size |
 | `readonly struct` via `Duck.As` | The struct is boxed into the `object` parameter, unboxed by the interceptor, then the adapter is boxed. | two objects |
+| Sequence argument | The wrapper is boxed once, plus one boxed adapter per element **per enumeration**. | one object + one per element |
+| `Duck.To` | Only the target itself. | the target |
 
 Numbers were measured with `GC.GetAllocatedBytesForCurrentThread`; see [Benchmarks](benchmarks.md) for timings. The JIT may elide the box when it can inline your method and prove the adapter doesn't escape, but don't rely on it. Prefer classes (or types implementing the interface) on hot paths when using `Duck.As`.
 

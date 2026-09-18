@@ -403,7 +403,6 @@ public class DuckTypedSignatureTests
     [InlineData("public partial class Holder<T> { [DuckTyped] public static string Get(INamed n) => n.Name; }")]
     [InlineData("public partial interface IHolder { [DuckTyped] public static string Get(INamed n) => n.Name; }")]
     [InlineData("file partial class Holder { [DuckTyped] public static string Get(INamed n) => n.Name; }")]
-    [InlineData("public static partial class Holder { [DuckTyped] public static string Get(this INamed n) => n.Name; }")]
     [InlineData("public static partial class Holder { [DuckTyped] public static T Get<T>(INamed n, T value) => value; }")]
     public void UnsupportedSignature_ReportsIfItQuacks004(string declaration)
     {

@@ -24,6 +24,43 @@ internal static class EmbeddedSources
                     return value as TShape ?? throw new DuckTypeMismatchException(value?.GetType() ?? typeof(object), typeof(TShape));
                 }
 
+                /// <summary>Copies <paramref name="value"/> into a new <typeparamref name="TTarget"/> built from the members of the
+                /// same name. The call is verified at compile time; unlike <see cref="As{TShape}(object)"/> this does not forward.</summary>
+                public static TTarget To<TTarget>(object value)
+                {
+                    return value is TTarget target
+                        ? target
+                        : throw new DuckTypeMismatchException(value?.GetType() ?? typeof(object), typeof(TTarget));
+                }
+
+                /// <summary>Returns <typeparamref name="TShape"/> built from several values, taking every member from the first
+                /// value that provides it. The call is verified at compile time and replaced by a generated adapter.</summary>
+                public static TShape Merge<TShape>(object first, object second) where TShape : class
+                {
+                    return first as TShape ?? second as TShape ??
+                        throw new DuckTypeMismatchException(first?.GetType() ?? typeof(object), typeof(TShape));
+                }
+
+                /// <inheritdoc cref="Merge{TShape}(object, object)"/>
+                public static TShape Merge<TShape>(object first, object second, object third) where TShape : class
+                {
+                    return first as TShape ?? second as TShape ?? third as TShape ??
+                        throw new DuckTypeMismatchException(first?.GetType() ?? typeof(object), typeof(TShape));
+                }
+
+                /// <summary>Returns a test double for <typeparamref name="TShape"/>: members <paramref name="value"/> provides are
+                /// forwarded to it, every other member throws <see cref="DuckStubException"/> when it is used.</summary>
+                public static TShape Stub<TShape>(object value) where TShape : class
+                {
+                    return value as TShape ?? throw new DuckTypeMismatchException(value?.GetType() ?? typeof(object), typeof(TShape));
+                }
+
+                /// <summary>Returns a test double for <typeparamref name="TShape"/> whose members all throw <see cref="DuckStubException"/>.</summary>
+                public static TShape Stub<TShape>() where TShape : class
+                {
+                    throw new DuckTypeMismatchException(typeof(object), typeof(TShape));
+                }
+
                 /// <summary>Returns the original instance behind a generated adapter, or <paramref name="value"/> itself
                 /// if it is not an adapter (e.g. because its type already implements the interface).</summary>
                 public static object? Unwrap(object? value) => value is IDuckAdapter adapter ? adapter.Value : value;
@@ -34,6 +71,15 @@ internal static class EmbeddedSources
             internal interface IDuckAdapter
             {
                 object? Value { get; }
+            }
+
+            /// <summary>Thrown when a member of a <see cref="Duck.Stub{TShape}()"/> that nothing implements is used.</summary>
+            internal sealed class DuckStubException : System.NotImplementedException
+            {
+                public DuckStubException(string member)
+                    : base($"Member '{member}' is not implemented by this duck stub.")
+                {
+                }
             }
 
             /// <summary>Thrown when a call that couldn't be verified at compile time (e.g. from generic code)

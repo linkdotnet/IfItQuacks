@@ -36,7 +36,6 @@ None of the parameters of a `[DuckTyped]` method is an interface passed by value
 
 Reported when
 
-- the method is an extension method,
 - the containing type (or one of its enclosing types) is generic,
 - the method is overloaded by another `[DuckTyped]` method of the same name in the same type,
 - the containing type is an interface or a `file`-local type,
@@ -71,12 +70,38 @@ For ref structs the compiler additionally reports `CS9244`, because the generate
 
 ## IFITQUACKS007
 
-**Duck.As type argument must be an interface**
+**Duck conversion target must be an interface**
 
-`Duck.As<TShape>` only converts to interfaces. This is also reported for type parameters, because the target can't be verified at compile time.
+`Duck.As`, `Duck.Stub` and `Duck.Merge` only convert to interfaces. This is also reported for type parameters, because the target can't be verified at compile time. `Duck.To` is the one that takes a concrete type.
 
 ```csharp
 public class Duckling { }
 
 var duckling = Duck.As<Duckling>(new A()); // error IFITQUACKS007
+```
+
+## IFITQUACKS008
+
+**Unsupported duck-typed call**
+
+The call itself can't be redirected, whatever its arguments are. So far this is only a `base` call: it invokes the method non-virtually, which neither an interceptor nor the generated fallback overload can reproduce - both would end up in the overriding method.
+
+```csharp
+public override string Greet(INamed named) => "derived";
+public string ViaBase() => base.Greet(new Person()); // error IFITQUACKS008
+```
+
+Pass a value already typed as the interface, or call the method without `base`.
+
+## IFITQUACKS009
+
+**Unsupported Duck.To target**
+
+`Duck.To<TTarget>` can't build the target from the source: the target is abstract, an interface (use [`Duck.As`](getting_started.md#converting-explicitly) instead), has no accessible constructor that the source can fill, or has a member the source has no counterpart for.
+
+```csharp
+public record PersonDto(string Name, int Age);
+public class OnlyName { public string Name { get; set; } = ""; }
+
+Duck.To<PersonDto>(new OnlyName()); // error IFITQUACKS009: no member of the source fills 'Age'
 ```

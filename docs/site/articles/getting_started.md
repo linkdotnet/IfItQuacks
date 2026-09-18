@@ -19,8 +19,9 @@ The generator adds the following `internal` types to the `IfItQuacks` namespace 
 | Type | Purpose |
 |---|---|
 | `DuckTypedAttribute` | Marks a method whose interface parameters accept any type that structurally matches the interface. |
-| `Duck` | `Duck.As<TShape>(value)` converts a value to an interface it structurally satisfies; `Duck.Unwrap(value)` returns the original instance behind an adapter. |
+| `Duck` | `Duck.As<TShape>(value)` converts a value to an interface it structurally satisfies; `Duck.Stub<TShape>(value)` fills the rest with members that throw; `Duck.Merge<TShape>(first, second)` takes each member from the first value providing it; `Duck.To<TTarget>(value)` copies into a new value; `Duck.Unwrap(value)` returns the original instance behind an adapter. |
 | `DuckTypeMismatchException` | Thrown at runtime if a call couldn't be verified at compile time and the value doesn't implement the interface. |
+| `DuckStubException` | Thrown when a member of a `Duck.Stub` that nothing implements is used. |
 
 ## Matching an interface
 
@@ -28,7 +29,7 @@ Any interface works - your own, the framework's (`IDisposable`, `IEnumerable<T>`
 
 | Member | Matched against |
 |---|---|
-| Methods | A public instance method with the same name and number of parameters. Its return type has to be assignable to the interface's (a `void` interface method accepts any return type), and the interface's parameter types have to be assignable to its parameters. `ref`/`out`/`in` parameters must match exactly. |
+| Methods | A public instance method with the same name and number of parameters, or a public property or field of a delegate type with a matching signature (see [Members holding a delegate](#members-holding-a-delegate)). Its return type has to be assignable to the interface's (a `void` interface method accepts any return type), and the interface's parameter types have to be assignable to its parameters. `ref`/`out`/`in` parameters must match exactly. |
 | Properties | A public instance property or field with the same name, and a public getter/setter where the interface declares one (a field needs to be non-`readonly` for a setter). A getter's type has to be assignable to the interface's type, a setter's the other way round - with both, the types have to convert in both directions. |
 | Indexers | A public indexer with the same accessors, assignable parameter types and a type following the property rules. |
 | Events | A public event with the same name and delegate type. |
@@ -54,6 +55,8 @@ public class Warehouse
 ```
 
 Types that already implement the interface - directly, explicitly or through variance - are passed through without an adapter. For all others, generic methods (`U Map<U>()`) and `static abstract` members can't be adapted and are reported with [`IFITQUACKS005`](diagnostics.md#ifitquacks005).
+
+The rest of this page uses one interface throughout:
 
 ```csharp
 public interface INameable
@@ -120,6 +123,24 @@ var party = new Party();
 party.Introduce(new Person { Name = "Steven" }, new Pet { Name = "Donald" }, greeting: "Quack");
 ```
 
+## Extension methods
+
+A `[DuckTyped]` method can be an extension method, which lets the receiver be duck-typed as well:
+
+```csharp
+public static partial class Ops
+{
+    [DuckTyped]
+    public static string Greet(this INameable nameable, string greeting = "Hello") => $"{greeting}, {nameable.Name}!";
+}
+
+new Person { Name = "Steven" }.Greet();          // Hello, Steven!
+new { Name = "Donald" }.Greet("Quack");          // Quack, Donald!
+Ops.Greet(new Person { Name = "Steven" }, "Hi"); // calling it as a static method works too
+```
+
+This is the one mode that changes what the rest of your code sees: to make `person.Greet()` compile, the generated fallback is an extension method with an unconstrained type parameter, so `Greet` appears on **every** type in scope. A receiver that doesn't fit reports [`IFITQUACKS001`](diagnostics.md#ifitquacks001) instead of `CS1061`.
+
 ## Generic interfaces
 
 Interfaces can be generic, and `[DuckTyped]` methods can be generic too. The type arguments are inferred from the argument's members:
@@ -152,8 +173,11 @@ An interface with a single method is satisfied by any matching delegate, lambda 
 ```csharp
 public interface IFormatter { string Format(int value); }
 
-[DuckTyped]
-public static string Render(IFormatter formatter, int value) => formatter.Format(value);
+public static partial class Ops
+{
+    [DuckTyped]
+    public static string Render(IFormatter formatter, int value) => formatter.Format(value);
+}
 
 Func<int, string> hex = value => $"0x{value:X}";
 Ops.Render(hex, 255);                          // a delegate variable
@@ -170,6 +194,70 @@ It also works the other way round: a `[DuckTyped]` method converts to a delegate
 Func<Person, string> describe = Ops.Describe;   // Describe takes an INamed
 people.Select(Ops.Describe);
 ```
+
+### Members holding a delegate
+
+A member whose type is a delegate stands in for the interface method of the same name. That turns an object literal into a test double:
+
+```csharp
+public interface IRepository
+{
+    Order? Find(int id);
+    void Save(Order order);
+}
+
+var repository = Duck.As<IRepository>(new
+{
+    Find = (Func<int, Order?>)(id => new Order(id, "Rubber duck")),
+    Save = (Action<Order>)(_ => { }),
+});
+```
+
+A lambda can't be assigned to an anonymous type property directly (`CS0828`), so its delegate type has to be written out.
+
+## Stubbing and merging
+
+`Duck.Stub<TShape>(value)` is `Duck.As` for tests: members the value provides are forwarded, everything else throws `DuckStubException` when it is used. `Duck.Stub<TShape>()` stubs the whole interface.
+
+```csharp
+var repository = Duck.Stub<IRepository>(new { Find = (Func<int, Order?>)(id => new Order(id, "Stubbed")) });
+
+repository.Find(7);                   // the lambda
+repository.Save(new Order(2, "..."));  // throws DuckStubException
+```
+
+A member that *is* there but doesn't fit is still reported with [`IFITQUACKS001`](diagnostics.md#ifitquacks001) - a stub fills in what is missing, not what is wrong.
+
+`Duck.Merge<TShape>(first, second)` (and a three-value overload) takes every member from the first value that provides it, which replaces a single member of a real object:
+
+```csharp
+Order? saved = null;
+var spy = Duck.Merge<IRepository>(new { Save = (Action<Order>)(order => saved = order) }, realRepository);
+
+spy.Save(order);   // the lambda
+spy.Find(1);       // the real repository
+```
+
+`Duck.Unwrap` returns the first value. A member none of the values provides is reported with [`IFITQUACKS001`](diagnostics.md#ifitquacks001).
+
+## Sequences
+
+An `IEnumerable<Person>` is not an `IEnumerable<INameable>`, even when every `Person` fits. Passing one adapts the sequence element by element, lazily:
+
+```csharp
+public static partial class Ops
+{
+    [DuckTyped]
+    public static string Join(IEnumerable<INameable> people) => string.Join(", ", people.Select(p => p.Name));
+}
+
+Ops.Join(new List<Person> { new() { Name = "Steven" } });
+Ops.Join(new[] { new Pet() });
+
+IReadOnlyList<INameable> view = Duck.As<IReadOnlyList<INameable>>(people); // Count and the indexer included
+```
+
+Only `IEnumerable<T>`, `IReadOnlyCollection<T>` and `IReadOnlyList<T>` qualify: they use their element type in output position only. `ICollection<T>` and `IList<T>` would need the adaptation to run backwards, so they are not supported.
 
 ## Static members and operators
 
@@ -256,7 +344,23 @@ customer.Email = "quack@example.com";
 Console.WriteLine(view.Email); // quack@example.com
 ```
 
-That makes it a cheap way to expose a narrower view of a type, e.g. hiding members of an entity behind a get-only interface. It is not a replacement for a mapper: members must match by name and have compatible types, nested objects and collections are not converted, and the result is not a standalone DTO (serializers see the adapter type, and changes to the source are still visible).
+That makes it a cheap way to expose a narrower view of a type, e.g. hiding members of an entity behind a get-only interface.
+
+### Copying with `Duck.To`
+
+When you need a value of its own instead of a view, `Duck.To<TTarget>(value)` builds one. The target is a concrete type, not an interface, and the call is replaced by an object creation - nothing forwards afterwards:
+
+```csharp
+public record CustomerDto(string Name, string Email);
+
+var dto = Duck.To<CustomerDto>(customer);  // new CustomerDto(customer.Name, customer.Email)
+customer.Email = "quack@example.com";
+Console.WriteLine(dto.Email);              // steven@example.com - the copy is its own value
+```
+
+The target is filled through the constructor taking the most parameters the source can fill, and every remaining settable property or field is set from the member of the same name. Anything the source can't fill is reported with [`IFITQUACKS009`](diagnostics.md#ifitquacks009).
+
+`Duck.To` is not a mapping library either: name for name, assignable types, no renaming, no nested projection and no user-defined conversions - the same rules as everywhere else.
 
 Runnable examples live in [`samples`](https://github.com/linkdotnet/IfItQuacks/tree/main/samples), one project per showcase:
 
@@ -273,3 +377,7 @@ Runnable examples live in [`samples`](https://github.com/linkdotnet/IfItQuacks/t
 | `IfItQuacks.Sample.Signatures` | `ref`/`out`/`params` parameters, `private` methods, methods on a struct and the runtime fallback |
 | `IfItQuacks.Sample.Delegates` | Delegates, lambdas and method groups as ducks, and `[DuckTyped]` methods as delegates |
 | `IfItQuacks.Sample.GenericMath` | `static abstract` members and operators through duck-typed constraints |
+| `IfItQuacks.Sample.Extensions` | `[DuckTyped]` extension methods, including a duck-typed receiver |
+| `IfItQuacks.Sample.Sequences` | `IEnumerable<T>` and `IReadOnlyList<T>` parameters adapted element by element |
+| `IfItQuacks.Sample.Testing` | Delegate members, `Duck.Stub` and `Duck.Merge` as test doubles |
+| `IfItQuacks.Sample.Copying` | `Duck.To` for records and settable types |

@@ -17,10 +17,21 @@ internal static class ShapeMatcher
         return null;
     }
 
-    public static ISymbol? FindUnsupportedMember(INamedTypeSymbol shape) =>
+    public static ISymbol? FindUnsupportedMember(INamedTypeSymbol shape, bool allowGenericMethods = false) =>
         shape.GetMembers()
             .Concat(shape.AllInterfaces.SelectMany(i => i.GetMembers()))
-            .FirstOrDefault(IsUnsupported);
+            .FirstOrDefault(m => IsUnsupported(m) && !(allowGenericMethods && m is IMethodSymbol { IsGenericMethod: true, IsStatic: false }));
+
+    /// <summary>The interface members <paramref name="concreteType"/> does not provide, which a stub implements by throwing.</summary>
+    public static IEnumerable<ISymbol> FindUnimplementedMembers(INamedTypeSymbol shape, INamedTypeSymbol concreteType, Compilation compilation) =>
+        GetShapeMembers(shape).Where(IsRequired).Where(m => FindCounterpart(m, concreteType, compilation) is null);
+
+    // A stub fills in what is missing; a member that is there but doesn't fit is a mistake, not an omission.
+    public static string? FindStubMismatch(INamedTypeSymbol shape, INamedTypeSymbol concreteType, Compilation compilation) =>
+        FindUnimplementedMembers(shape, concreteType, compilation)
+            .Where(m => GetAllMembers(concreteType).Any(c => c.Name == m.Name && IsPublicInstance(c)))
+            .Select(m => FindMemberMismatch(concreteType, m, compilation))
+            .FirstOrDefault(mismatch => mismatch is not null);
 
     public static IEnumerable<ISymbol> GetShapeMembers(INamedTypeSymbol shape) =>
         shape.GetMembers()
@@ -41,7 +52,7 @@ internal static class ShapeMatcher
 
     private static ISymbol? FindNamedCounterpart(ISymbol member, INamedTypeSymbol concreteType, Compilation compilation) => member switch
     {
-        IMethodSymbol method => FindMethod(concreteType, method, compilation),
+        IMethodSymbol method => FindMethod(concreteType, method, compilation) ?? FindDelegateMember(concreteType, method, compilation),
         IPropertySymbol property => GetAllMembers(concreteType).FirstOrDefault(m => IsPropertyMatch(m, property, compilation)),
         IEventSymbol @event => GetAllMembers(concreteType).OfType<IEventSymbol>()
             .FirstOrDefault(e => e.Name == @event.Name && IsPublicInstance(e) && SymbolEqualityComparer.Default.Equals(e.Type, @event.Type)),
@@ -133,6 +144,22 @@ internal static class ShapeMatcher
         }
         return assignable;
     }
+
+    /// <summary>The delegate type a member stands in for when it satisfies an interface method, or <c>null</c>.</summary>
+    public static INamedTypeSymbol? DelegateTypeOf(ISymbol member) => member switch
+    {
+        IPropertySymbol { IsIndexer: false, GetMethod.DeclaredAccessibility: Accessibility.Public } property =>
+            property.Type as INamedTypeSymbol,
+        IFieldSymbol field => field.Type as INamedTypeSymbol,
+        _ => null,
+    } is { DelegateInvokeMethod: not null } delegateType ? delegateType : null;
+
+    // A member holding a delegate stands in for the interface method of the same name, which is what makes 'new { Load = (int id) => ... }' a duck.
+    private static ISymbol? FindDelegateMember(INamedTypeSymbol concreteType, IMethodSymbol shapeMethod, Compilation compilation) =>
+        GetAllMembers(concreteType)
+            .FirstOrDefault(m => m.Name == shapeMethod.Name && IsPublicInstance(m) &&
+                                 DelegateTypeOf(m) is { DelegateInvokeMethod: { } invoke } &&
+                                 IsDelegateMatch(shapeMethod, invoke, compilation));
 
     private static bool IsPropertyMatch(ISymbol candidate, IPropertySymbol shapeProperty, Compilation compilation) => candidate switch
     {
