@@ -24,3 +24,12 @@ Rule ID | Category | Severity | Notes
 --------|----------|----------|-------
 IFITQUACKS008 | IfItQuacks | Error | Unsupported duck-typed call
 IFITQUACKS009 | IfItQuacks | Error | Unsupported Duck.To target
+
+## Release 1.4.0
+
+### New Rules
+
+Rule ID | Category | Severity | Notes
+--------|----------|----------|-------
+IFITQUACKS010 | IfItQuacks | Error | Mapped shape target must be a partial interface
+IFITQUACKS011 | IfItQuacks | Error | Unsupported [DuckShape<>] usage

@@ -6,6 +6,8 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 ## [Unreleased]
 
+## [v1.4.0] - 2026-09-20
+
 ### Added
 
 - **Mapped shapes.** `[DuckShape<TSource>]` fills a `partial interface` with members derived from another
@@ -17,7 +19,7 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 - **Constrained duck typing.** A `[DuckTyped]` method can take its duck type as a constrained type
   parameter (`[DuckTyped] static int Describe<T>(T person) where T : IPerson`). The generated overload
-  passes the adapter as the *type argument* instead of an interface, so nothing is boxed and the runtime
+  passes the adapter as the _type argument_ instead of an interface, so nothing is boxed and the runtime
   specializes the body per shape: `562 ns` and 0 bytes per 1000 calls against `3,694 ns` and 24,000 B for
   the interface parameter, and `3,005 ns` against `10,459 ns` when three shapes share one method. This
   mode previously existed only for `static abstract` members and generic math.
@@ -124,7 +126,8 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 - Anonymous types can be passed to `[DuckTyped]` methods and `Duck.As`.
 - Adapters forward `Equals`, `GetHashCode` and `ToString` to the wrapped instance; `Duck.Unwrap` returns it.
 
-[unreleased]: https://github.com/linkdotnet/IfItQuacks/compare/v1.3.0...HEAD
+[unreleased]: https://github.com/linkdotnet/IfItQuacks/compare/v1.4.0...HEAD
+[v1.4.0]: https://github.com/linkdotnet/IfItQuacks/compare/v1.3.0...v1.4.0
 [v1.3.0]: https://github.com/linkdotnet/IfItQuacks/compare/v1.2.0...v1.3.0
 [v1.2.0]: https://github.com/linkdotnet/IfItQuacks/compare/v1.1.0...v1.2.0
 [v1.1.0]: https://github.com/linkdotnet/IfItQuacks/compare/v1.0.0...v1.1.0
