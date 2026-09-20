@@ -48,6 +48,32 @@ public class PipelineTests
     }
 
     [Fact]
+    public void EditingUnrelatedFile_DoesNotRegenerateMappedShapes()
+    {
+        const string mapped = """
+            using IfItQuacks;
+
+            public class Customer { public int Id { get; set; } public string Name { get; set; } = ""; }
+
+            [DuckShape<Customer>(Omit = [nameof(Customer.Id)])]
+            public partial interface ICustomerView;
+            """;
+
+        var compilation = GeneratorTestHelper.CreateCompilation(OutputKind.DynamicallyLinkedLibrary, null, mapped, "public class Unrelated { }");
+        var driver = GeneratorTestHelper.CreateTrackingDriver().RunGenerators(compilation, TestContext.Current.CancellationToken);
+
+        var unrelatedTree = compilation.SyntaxTrees.Last();
+        var edited = compilation.ReplaceSyntaxTree(unrelatedTree,
+            GeneratorTestHelper.ParseText("public class Unrelated { public void M() => System.Console.WriteLine(1); }"));
+        var result = driver.RunGenerators(edited, TestContext.Current.CancellationToken).GetRunResult().Results.Single();
+
+        var outputs = result.TrackedSteps["IfItQuacks.MappedShapes"].SelectMany(step => step.Outputs).ToList();
+        Assert.NotEmpty(outputs);
+        Assert.All(outputs, output =>
+            Assert.True(output.Reason is IncrementalStepRunReason.Cached or IncrementalStepRunReason.Unchanged, output.Reason.ToString()));
+    }
+
+    [Fact]
     public void ProjectReferencingAnotherProjectUsingIfItQuacks_HasNoTypeConflicts()
     {
         var (library, libraryDiagnostics) = GeneratorTestHelper.RunGenerator(Shapes);

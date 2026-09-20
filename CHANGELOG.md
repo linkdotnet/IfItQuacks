@@ -6,6 +6,35 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 ## [Unreleased]
 
+### Added
+
+- **Mapped shapes.** `[DuckShape<TSource>]` fills a `partial interface` with members derived from another
+  type - `Pick`, `Omit`, `Optional` (TypeScript's `Partial`), `Readonly` and, by applying the attribute
+  several times, intersections. Because matching is structural, the derived interface is satisfied by the
+  source, by a DTO and by an object literal alike. Diagnostics `IFITQUACKS010` and `IFITQUACKS011`.
+
+- Sample `IfItQuacks.Sample.MappedShapes` and a [Mapped shapes](docs/site/articles/mapped_shapes.md) article.
+
+- **Constrained duck typing.** A `[DuckTyped]` method can take its duck type as a constrained type
+  parameter (`[DuckTyped] static int Describe<T>(T person) where T : IPerson`). The generated overload
+  passes the adapter as the *type argument* instead of an interface, so nothing is boxed and the runtime
+  specializes the body per shape: `562 ns` and 0 bytes per 1000 calls against `3,694 ns` and 24,000 B for
+  the interface parameter, and `3,005 ns` against `10,459 ns` when three shapes share one method. This
+  mode previously existed only for `static abstract` members and generic math.
+
+- `[DuckTyped]` **extension methods with a constrained receiver** (`static string Shout<T>(this T named) where T : INamed`).
+
+- A duck-typed constraint may now sit **next to ordinary interface parameters**
+  (`static string Label<T>(T priced, ILog log) where T : IPriced`). Previously `IFITQUACKS004`.
+
+- Sample `IfItQuacks.Sample.Constraints` and a [Constrained duck typing](docs/site/articles/constrained_duck_typing.md) article.
+
+### Fixed
+
+- An anonymous type passed to a duck-typed constraint produced uncompilable code. The generated overload
+  has to name the argument's type, which an anonymous type has none for, so it is reported with
+  `IFITQUACKS001` instead.
+
 ## [v1.3.0] - 2026-09-18
 
 ### Added

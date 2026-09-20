@@ -24,11 +24,12 @@ internal static class TypeWrapper
         var indent = hasNamespace ? "    " : "";
         foreach (var t in typeChain)
         {
-            var kind = (t.IsRecord, t.TypeKind == TypeKind.Struct) switch
+            var kind = (t.IsRecord, t.TypeKind) switch
             {
-                (true, true) => "record struct",
-                (true, false) => "record",
-                (false, true) => "struct",
+                (true, TypeKind.Struct) => "record struct",
+                (true, _) => "record",
+                (false, TypeKind.Struct) => "struct",
+                (false, TypeKind.Interface) => "interface",
                 _ => "class",
             };
             var modifiers = (t.IsStatic ? "static " : "") +

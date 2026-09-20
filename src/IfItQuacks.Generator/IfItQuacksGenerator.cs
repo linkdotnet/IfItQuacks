@@ -17,6 +17,7 @@ namespace IfItQuacks.Generator;
 public sealed class IfItQuacksGenerator : IIncrementalGenerator
 {
     private const string DuckTypedAttributeName = "IfItQuacks.DuckTypedAttribute";
+    private const string DuckShapeAttributeName = "IfItQuacks.DuckShapeAttribute`1";
     private const string DuckTypeName = "IfItQuacks.Duck";
     private const string DuckAsMethodName = "As";
     private const string DuckStubMethodName = "Stub";
@@ -29,6 +30,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
 
     internal const string CallSitesTrackingName = "IfItQuacks.CallSites";
     internal const string MethodGroupsTrackingName = "IfItQuacks.MethodGroups";
+    internal const string MappedShapesTrackingName = "IfItQuacks.MappedShapes";
 
     /// <inheritdoc />
     public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -49,6 +51,15 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             .Collect()
             .Select(static (refs, _) => new EquatableArray<DuckMethodRef>(
                 refs.Distinct().OrderBy(r => r.ContainingType, StringComparer.Ordinal).ThenBy(r => r.Name, StringComparer.Ordinal).ToImmutableArray()));
+
+        var mappedShapes = context.SyntaxProvider
+            .ForAttributeWithMetadataName(
+                DuckShapeAttributeName,
+                predicate: static (node, _) => node is InterfaceDeclarationSyntax,
+                transform: static (ctx, _) => AnalyzeMappedShape(ctx))
+            .WithTrackingName(MappedShapesTrackingName);
+
+        context.RegisterSourceOutput(mappedShapes, static (spc, shape) => EmitMappedShape(spc, shape));
 
         var callSites = context.SyntaxProvider
             .CreateSyntaxProvider(
@@ -89,6 +100,67 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         return new DuckTypedMethodOutput(method.Name, reference, fallback, new EquatableArray<Diagnostic>(diagnostics.ToImmutable()));
     }
 
+    private static MappedShapeOutput AnalyzeMappedShape(GeneratorAttributeSyntaxContext ctx)
+    {
+        var target = (INamedTypeSymbol)ctx.TargetSymbol;
+        var location = ctx.TargetNode.GetLocation();
+        var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
+
+        var reason = FindUnsupportedMappedShapeTarget(target, ctx.TargetNode);
+        if (reason is not null)
+        {
+            diagnostics.Add(Diagnostic.Create(Diagnostics.MappedShapeNotPartialInterface, location, target.Name, reason));
+            return new MappedShapeOutput(null, new EquatableArray<Diagnostic>(diagnostics.ToImmutable()));
+        }
+
+        var options = ctx.Attributes
+            .Select(MappedShapeEmitter.ReadOptions)
+            .Where(o => o is not null)
+            .Select(o => o!)
+            .ToImmutableArray();
+
+        if (options.IsEmpty)
+            return new MappedShapeOutput(null, default);
+
+        var members = MappedShapeEmitter.Emit(target, options, diagnostics, location);
+        if (members is null)
+            return new MappedShapeOutput(null, new EquatableArray<Diagnostic>(diagnostics.ToImmutable()));
+
+        var file = new GeneratedFile(
+            $"IfItQuacks.Shape.{SanitizeHintName(target.ToDisplayString())}.g.cs",
+            Header + TypeWrapper.WrapInContainingScope(target, members.TrimEnd('\n', '\r')));
+        return new MappedShapeOutput(file, default);
+    }
+
+    // The generated members go into a second declaration of the interface, so it and every type around it has to be partial.
+    private static string? FindUnsupportedMappedShapeTarget(INamedTypeSymbol target, SyntaxNode node)
+    {
+        if (node is InterfaceDeclarationSyntax declaration && !declaration.Modifiers.Any(SyntaxKind.PartialKeyword))
+            return "it is not declared 'partial'";
+
+        if (IsInGenericType(target))
+            return "its containing type is generic";
+
+        if (IsInFileLocalType(target))
+            return "its containing type is file-local";
+
+        var enclosingNotPartial = EnclosingTypes(target).Skip(1).Any(t => t.DeclaringSyntaxReferences
+            .Select(r => r.GetSyntax())
+            .OfType<TypeDeclarationSyntax>()
+            .Any(d => !d.Modifiers.Any(SyntaxKind.PartialKeyword)));
+
+        return enclosingNotPartial ? "one of its containing types is not declared 'partial'" : null;
+    }
+
+    private static void EmitMappedShape(SourceProductionContext context, MappedShapeOutput shape)
+    {
+        foreach (var diagnostic in shape.Diagnostics)
+            context.ReportDiagnostic(diagnostic);
+
+        if (shape.File is { } file)
+            context.AddSource(file.Name, SourceText.From(file.Source, Encoding.UTF8));
+    }
+
     private static bool ValidateDuckTypedMethod(IMethodSymbol method, Location location, ImmutableArray<Diagnostic>.Builder? diagnostics)
     {
         if (method.ContainingType.DeclaringSyntaxReferences
@@ -117,7 +189,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         var duckParameters = GetDuckParameters(method);
         var constraintTypeParameters = GetConstraintTypeParameters(method);
         if (!constraintTypeParameters.IsEmpty)
-            return ValidateConstraintMethod(method, duckParameters, constraintTypeParameters, location, diagnostics);
+            return ValidateConstraintMethod(method, constraintTypeParameters, location, diagnostics);
 
         if (duckParameters.IsEmpty)
         {
@@ -151,14 +223,12 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
                          method.Parameters.Any(p => p is { RefKind: RefKind.None } && SymbolEqualityComparer.Default.Equals(p.Type, tp)))
             .ToImmutableArray();
 
-    private static bool ValidateConstraintMethod(IMethodSymbol method, ImmutableArray<IParameterSymbol> duckParameters,
+    private static bool ValidateConstraintMethod(IMethodSymbol method,
         ImmutableArray<ITypeParameterSymbol> constraintTypeParameters, Location location, ImmutableArray<Diagnostic>.Builder? diagnostics)
     {
-        string? reason = null;
-        if (!duckParameters.IsEmpty)
-            reason = "it mixes interface parameters with duck-typed constraints";
-        else if (method.TypeParameters.Length != constraintTypeParameters.Length)
-            reason = "not all of its type parameters have a single interface constraint used by a parameter";
+        var reason = method.TypeParameters.Length != constraintTypeParameters.Length
+            ? "not all of its type parameters have a single interface constraint used by a parameter"
+            : null;
 
         if (reason is null)
             return true;
@@ -457,6 +527,14 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             }
 
             var location = argumentTypes[0].Expression.GetLocation();
+            // The overload names the argument's type in its signature, which an anonymous type has no name for.
+            if (concreteType.IsAnonymousType)
+            {
+                diagnostics.Add(Diagnostic.Create(Diagnostics.ShapeMismatch, location, concreteType.ToDisplayString(),
+                    shape.ToDisplayString(), "anonymous types are not supported by duck-typed constraints"));
+                continue;
+            }
+
             if (StaticShapeMatcher.FindUnsupportedMember(shape) is { } unsupportedStatic)
             {
                 diagnostics.Add(Diagnostic.Create(Diagnostics.UnsupportedShapeMember, location, shape.ToDisplayString(),
@@ -494,13 +572,49 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             bindings[typeParameter] = (concreteType, adapterName);
         }
 
+        // Interface parameters next to the constraints keep the regular adapter, boxed as the interface.
+        var shapeBindings = new Dictionary<int, (INamedTypeSymbol ConcreteType, string AdapterName)>();
+        foreach (var parameter in GetDuckParameters(duckMethod))
+        {
+            if (!arguments.TryGetValue(parameter.Ordinal, out var expression))
+                continue;
+
+            var argumentType = GetArgumentType(semanticModel, expression, compilation, ct);
+            // A null literal, an omitted argument or a value already typed as the interface needs no adapter.
+            if (argumentType is null || SymbolEqualityComparer.Default.Equals(argumentType, parameter.Type) ||
+                ContainsErrorType(argumentType) || ContainsAnyTypeParameter(argumentType))
+                continue;
+
+            var shape = (INamedTypeSymbol)parameter.Type;
+            if (VerifyArgument(expression, shape, argumentType, compilation, out var implementsDirectly) is { } diagnostic)
+            {
+                diagnostics.Add(diagnostic);
+                continue;
+            }
+
+            if (implementsDirectly)
+                continue;
+
+            if (argumentType is not INamedTypeSymbol { IsAnonymousType: false } named)
+            {
+                diagnostics.Add(Diagnostic.Create(Diagnostics.ShapeMismatch, expression.GetLocation(), argumentType.ToDisplayString(),
+                    shape.ToDisplayString(), "anonymous types and sequences are not supported next to duck-typed constraints"));
+                continue;
+            }
+
+            var adapter = CreateAdapter(shape, named, compilation);
+            adapters.AddRange(adapter.Files);
+            shapeBindings[parameter.Ordinal] = (named, adapter.Name);
+        }
+
         if (diagnostics.Count > 0)
             return DiagnosticsOnly(diagnostics);
 
-        if (bindings.Count != constraintTypeParameters.Length || bindings.Values.All(b => b.AdapterName is null))
+        if (bindings.Count != constraintTypeParameters.Length ||
+            (bindings.Values.All(b => b.AdapterName is null) && shapeBindings.Count == 0))
             return null;
 
-        var overload = CreateConstraintOverload(duckMethod, bindings);
+        var overload = CreateConstraintOverload(duckMethod, bindings, shapeBindings);
         return overload is null
             ? null
             : new CallSiteOutput(null, new EquatableArray<GeneratedFile>(adapters.ToImmutable()), overload, default);
@@ -529,22 +643,37 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
     };
 
     private static OverloadMember? CreateConstraintOverload(IMethodSymbol method,
-        Dictionary<ITypeParameterSymbol, (INamedTypeSymbol ConcreteType, string? AdapterName)> bindings)
+        Dictionary<ITypeParameterSymbol, (INamedTypeSymbol ConcreteType, string? AdapterName)> bindings,
+        Dictionary<int, (INamedTypeSymbol ConcreteType, string AdapterName)> shapeBindings)
     {
         string? Bound(ITypeSymbol type) =>
             type is ITypeParameterSymbol tp && bindings.TryGetValue(tp, out var binding) ? binding.ConcreteType.ToDisplayString() : null;
+
+        string ParameterType(IParameterSymbol p) =>
+            shapeBindings.TryGetValue(p.Ordinal, out var shapeBinding)
+                ? shapeBinding.ConcreteType.ToDisplayString()
+                : Bound(p.Type) ?? p.Type.ToDisplayString();
 
         if (method.Parameters.Any(p => Bound(p.Type) is null && ContainsAnyTypeParameter(p.Type)) ||
             (Bound(method.ReturnType) is null && ContainsAnyTypeParameter(method.ReturnType)))
             return null;
 
-        var parameters = string.Join(", ", method.Parameters.Select(p =>
-            Utilities.Parameter(p, Bound(p.Type) ?? p.Type.ToDisplayString()) + Utilities.DefaultValue(p)));
+        var parameters = string.Join(", ", method.Parameters.Select((p, i) =>
+            (method.IsExtensionMethod && i == 0 ? "this " : "") +
+            Utilities.Parameter(p, ParameterType(p)) + (shapeBindings.ContainsKey(p.Ordinal) ? "" : Utilities.DefaultValue(p))));
 
         var arguments = string.Join(", ", method.Parameters.Select(p =>
-            p.Type is ITypeParameterSymbol tp && bindings.TryGetValue(tp, out var binding) && binding.AdapterName is not null
+        {
+            if (shapeBindings.TryGetValue(p.Ordinal, out var shapeBinding))
+            {
+                // The cast keeps overload resolution on the user's method instead of the generated overload.
+                return $"({p.Type.ToDisplayString()})(new global::{GeneratedNamespace}.{shapeBinding.AdapterName}({Utilities.Identifier(p.Name)}))";
+            }
+
+            return p.Type is ITypeParameterSymbol tp && bindings.TryGetValue(tp, out var binding) && binding.AdapterName is not null
                 ? $"new global::{GeneratedNamespace}.{binding.AdapterName}({Utilities.Identifier(p.Name)})"
-                : Utilities.Argument(p)));
+                : Utilities.Argument(p);
+        }));
 
         var typeArguments = string.Join(", ", method.TypeParameters.Select(tp =>
             bindings[tp].AdapterName is { } adapter ? $"global::{GeneratedNamespace}.{adapter}" : bindings[tp].ConcreteType.ToDisplayString()));
@@ -559,7 +688,8 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             body = $"({returnBinding.ConcreteType.ToDisplayString()})({call})";
 
         var accessibility = method.DeclaredAccessibility is Accessibility.Public or Accessibility.Protected or Accessibility.ProtectedOrInternal &&
-                            !bindings.Values.All(b => IsPubliclyVisible(b.ConcreteType))
+                            !(bindings.Values.All(b => IsPubliclyVisible(b.ConcreteType)) &&
+                              shapeBindings.Values.All(b => IsPubliclyVisible(b.ConcreteType)))
             ? "internal"
             : Utilities.AccessibilityKeyword(method.DeclaredAccessibility);
 

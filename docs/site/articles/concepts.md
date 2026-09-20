@@ -204,7 +204,17 @@ The constructor taking the most parameters the source can fill wins; everything 
 
 ## Duck-typed constraints
 
-`static abstract` members can't be reached through an instance, so they are matched through a constraint (`where T : IAddable<T>`). The adapter becomes its own type argument, forwards the statics and operators to the wrapped type and converts back:
+A duck type can be written as a constrained type parameter (`where T : IShape`) instead of an interface parameter. There is no call to intercept then - the generator adds a concrete overload that passes the adapter **as the type argument**:
+
+```csharp
+// [DuckTyped] public static int Describe<T>(T person) where T : IPerson
+public static int Describe(global::Person person) =>
+    Describe<ShapeAdapter_IPerson_Person>(new ShapeAdapter_IPerson_Person(person));
+```
+
+The adapter is the same `readonly struct`; only its use changes. A struct type argument makes the runtime compile a separate copy of the method for that adapter, so the interface calls inside it are devirtualized and the forwarders inline - and nothing is boxed, because the adapter never becomes an interface. See [Constrained duck typing](constrained_duck_typing.md) for when to choose this form.
+
+This is also the only way to reach `static abstract` members, which no instance can provide. There the adapter becomes its own type argument, forwards the statics and operators to the wrapped type and converts back:
 
 ```csharp
 internal readonly struct ShapeAdapter_IAddable_Money_Money : IAddable<ShapeAdapter_IAddable_Money_Money>, IDuckAdapter
@@ -221,7 +231,7 @@ public static global::Money Sum(global::Money first, global::Money second) =>
     (global::Money)(Sum<ShapeAdapter_IAddable_Money_Money>(new(first), new(second)));
 ```
 
-Because the adapter is passed as a *constrained type argument* rather than an interface, these calls don't box.
+Because the adapter is passed as a *constrained type argument* rather than an interface, these calls don't box - which is true of every constrained duck-typed call, not just the generic-math ones.
 
 ## Allocations
 

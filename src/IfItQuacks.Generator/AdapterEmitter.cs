@@ -126,37 +126,50 @@ internal static class AdapterEmitter
     public static void EmitInstanceMembers(StringBuilder sb, INamedTypeSymbol shape, INamedTypeSymbol concreteType, string receiver,
         Compilation compilation, Func<ISymbol, string> owner)
     {
+        // A [DuckShape<>] member is a symbol of the source type, so the interface it is implemented for and
+        // the signature it carries both come from the mapping, not from the symbol itself.
+        var mapped = MappedShapeEmitter.TryGetInfo(shape);
+        if (mapped is not null)
+        {
+            var shapeName = shape.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            owner = _ => shapeName;
+        }
+
         foreach (var member in ShapeMatcher.GetShapeMembers(shape))
         {
-            var counterpart = ShapeMatcher.FindCounterpart(member, concreteType, compilation);
+            var counterpart = ShapeMatcher.FindCounterpart(member, concreteType, compilation, mapped);
             if (counterpart is null)
                 continue;
 
-            EmitMember(sb, member, counterpart, Qualify(receiver, concreteType, counterpart), owner);
+            EmitMember(sb, member, counterpart, Qualify(receiver, concreteType, counterpart), owner, mapped);
         }
     }
 
-    private static void EmitMember(StringBuilder sb, ISymbol member, ISymbol counterpart, string receiver, Func<ISymbol, string> owner)
+    private static void EmitMember(StringBuilder sb, ISymbol member, ISymbol counterpart, string receiver, Func<ISymbol, string> owner,
+        MappedShapeEmitter.Info? mapped = null)
     {
         switch (member)
         {
             case IMethodSymbol method when counterpart is IMethodSymbol target:
-                EmitMethod(sb, method, target, receiver, owner);
+                EmitMethod(sb, method, target, receiver, owner, mapped);
                 break;
             case IMethodSymbol method:
                 EmitDelegateMethod(sb, method, counterpart, receiver, owner);
                 break;
             case IPropertySymbol { IsIndexer: true } indexer:
-                EmitIndexer(sb, indexer, receiver, owner);
+                EmitIndexer(sb, indexer, receiver, owner, mapped);
                 break;
             case IPropertySymbol property:
-                EmitProperty(sb, property, receiver, owner);
+                EmitProperty(sb, property, receiver, owner, mapped);
                 break;
             case IEventSymbol @event:
                 EmitEvent(sb, @event, receiver, owner);
                 break;
         }
     }
+
+    private static string MemberType(ISymbol member, ITypeSymbol type, MappedShapeEmitter.Info? mapped) =>
+        mapped is null ? type.ToDisplayString() : MappedShapeEmitter.MemberTypeName(member, type, mapped);
 
     public static string GetMergeAdapterName(INamedTypeSymbol shape, IEnumerable<INamedTypeSymbol> sources) =>
         $"MergeAdapter_{Sanitize(shape.ToDisplayString())}_" +
@@ -208,7 +221,8 @@ internal static class AdapterEmitter
     }
 
     // Members are implemented explicitly, so interfaces inheriting same-named members (IEnumerable<T>.GetEnumerator) or declaring object members don't clash.
-    private static void EmitMethod(StringBuilder sb, IMethodSymbol method, IMethodSymbol counterpart, string receiver, Func<ISymbol, string> owner)
+    private static void EmitMethod(StringBuilder sb, IMethodSymbol method, IMethodSymbol counterpart, string receiver, Func<ISymbol, string> owner,
+        MappedShapeEmitter.Info? mapped = null)
     {
         var parameters = FormatParameters(method.Parameters);
         // Casting to the matched parameter types keeps overload resolution on the member the shape was matched against.
@@ -216,7 +230,7 @@ internal static class AdapterEmitter
             SymbolEqualityComparer.Default.Equals(p.Type, counterpart.Parameters[i].Type)
                 ? Utilities.Argument(p)
                 : $"({counterpart.Parameters[i].Type.ToDisplayString()}){Utilities.Identifier(p.Name)}"));
-        sb.AppendLine($"        {Utilities.RefReturnPrefix(method.RefKind)}{method.ReturnType.ToDisplayString()} {owner(method)}.{method.Name}({parameters}) => {RefExpressionPrefix(method.RefKind)}{receiver}.{counterpart.Name}({args});");
+        sb.AppendLine($"        {Utilities.RefReturnPrefix(method.RefKind)}{MemberType(method, method.ReturnType, mapped)} {owner(method)}.{method.Name}({parameters}) => {RefExpressionPrefix(method.RefKind)}{receiver}.{counterpart.Name}({args});");
     }
 
     // A member holding a delegate implements the interface method through its Invoke.
@@ -231,20 +245,24 @@ internal static class AdapterEmitter
                       $"{RefExpressionPrefix(method.RefKind)}{receiver}.{counterpart.Name}({args});");
     }
 
-    private static void EmitProperty(StringBuilder sb, IPropertySymbol property, string receiver, Func<ISymbol, string> owner)
+    private static void EmitProperty(StringBuilder sb, IPropertySymbol property, string receiver, Func<ISymbol, string> owner,
+        MappedShapeEmitter.Info? mapped = null)
     {
-        sb.Append($"        {Utilities.RefReturnPrefix(property.RefKind)}{property.Type.ToDisplayString()} {owner(property)}.{property.Name} {{ ");
+        sb.Append($"        {Utilities.RefReturnPrefix(property.RefKind)}{MemberType(property, property.Type, mapped)} {owner(property)}.{property.Name} {{ ");
         if (property.GetMethod is not null) sb.Append($"get => {RefExpressionPrefix(property.RefKind)}{receiver}.{property.Name}; ");
-        if (property.SetMethod is { } setter) sb.Append($"{SetterKeyword(setter)} => {receiver}.{property.Name} = value; ");
+        if (property.SetMethod is { } setter && (mapped is null || (MappedShapeEmitter.KeepsSetter(property, mapped) && !setter.IsInitOnly)))
+            sb.Append($"{SetterKeyword(setter)} => {receiver}.{property.Name} = value; ");
         sb.AppendLine("}");
     }
 
-    private static void EmitIndexer(StringBuilder sb, IPropertySymbol indexer, string receiver, Func<ISymbol, string> owner)
+    private static void EmitIndexer(StringBuilder sb, IPropertySymbol indexer, string receiver, Func<ISymbol, string> owner,
+        MappedShapeEmitter.Info? mapped = null)
     {
         var args = string.Join(", ", indexer.Parameters.Select(Utilities.Argument));
-        sb.Append($"        {Utilities.RefReturnPrefix(indexer.RefKind)}{indexer.Type.ToDisplayString()} {owner(indexer)}.this[{FormatParameters(indexer.Parameters)}] {{ ");
+        sb.Append($"        {Utilities.RefReturnPrefix(indexer.RefKind)}{MemberType(indexer, indexer.Type, mapped)} {owner(indexer)}.this[{FormatParameters(indexer.Parameters)}] {{ ");
         if (indexer.GetMethod is not null) sb.Append($"get => {RefExpressionPrefix(indexer.RefKind)}{receiver}[{args}]; ");
-        if (indexer.SetMethod is { } setter) sb.Append($"{SetterKeyword(setter)} => {receiver}[{args}] = value; ");
+        if (indexer.SetMethod is { } setter && (mapped is null || (MappedShapeEmitter.KeepsSetter(indexer, mapped) && !setter.IsInitOnly)))
+            sb.Append($"{SetterKeyword(setter)} => {receiver}[{args}] = value; ");
         sb.AppendLine("}");
     }
 

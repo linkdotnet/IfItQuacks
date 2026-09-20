@@ -3,6 +3,10 @@
   items:
     - name: How does it work?
       href: concepts.md
+    - name: Mapped shapes
+      href: mapped_shapes.md
+    - name: Constrained duck typing
+      href: constrained_duck_typing.md
     - name: Diagnostics
       href: diagnostics.md
     - name: Benchmarks

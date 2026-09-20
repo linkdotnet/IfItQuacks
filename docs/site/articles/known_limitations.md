@@ -81,13 +81,14 @@ public interface IMapper
 
 Both are only reported for arguments that need an adapter. A type implementing the interface itself is passed through untouched.
 
-`static abstract` members *are* supported through a duck-typed constraint (`where T : IAddable<T>`), because there the adapter is its own type argument. That mode has its own limits:
+`static abstract` members *are* supported through a duck-typed constraint (`where T : IAddable<T>`), because there the adapter is its own type argument. [Constrained duck typing](constrained_duck_typing.md) has its own limits:
 
 ```csharp
 [DuckTyped] static T Sum<T>(T a, T b) where T : IAddable<T> => a + b;          // works
+[DuckTyped] static string Mix<T>(T a, INamed n) where T : INamed => a.Name;    // works: constraints and interface parameters mix
 Ops.Sum(new Money(1m), 2);                                                     // no: arguments must have the same type
-[DuckTyped] static T Mix<T>(T a, INamed n) where T : IAddable<T> => a;         // IFITQUACKS004: mixing both modes
 [DuckTyped] static T Half<T, U>(T a, U b) where T : IAddable<T> => a;          // IFITQUACKS004: U has no interface constraint
+Ops.Greet(new { Name = "Steven" });                                            // IFITQUACKS001: the overload can't name an anonymous type
 
 public interface ICombinable<T> where T : ICombinable<T>
 {
@@ -133,6 +134,19 @@ Duck.As<IEnumerable<IEnumerable<INamed>>>(groups); // IFITQUACKS001: not nested
 ```
 
 Every enumeration allocates one wrapper plus one adapter per element, so a sequence you walk repeatedly is cheaper materialised once.
+
+## Mapped shapes
+
+`[DuckShape<T>]` derives properties, and with `IncludeMethods` also methods, events and indexers. It stops there:
+
+```csharp
+[DuckShape<Customer>(Pick = [nameof(Customer.Id)])] public partial interface IKey;   // works
+[DuckShape<Customer>] public interface INotPartial;                                  // IFITQUACKS010: not partial
+[DuckShape<Customer>(Pick = ["Id"], Omit = ["Name"])] public partial interface IBoth; // IFITQUACKS011: mutually exclusive
+[DuckShape<Customer>(Omit = ["Nope"])] public partial interface ITypo;                // IFITQUACKS011: unknown member
+```
+
+Public **fields** of the source are not derived, and neither are static members, generic methods or `init`-only setters. Nothing is shaped recursively: a derived `Address` member keeps its own type. Because `[DuckShape<T>]` is a generic attribute, the consuming project needs C# 11 or later. See [Mapped shapes](mapped_shapes.md).
 
 ## Copying with `Duck.To`
 
@@ -185,7 +199,7 @@ public struct Counter
 Ops.Bump(new Counter()); // IFITQUACKS006: mutable structs are copied into an adapter, ...
 ```
 
-If you need a mutable struct, make it implement the interface or wrap it in a class - both make the copy explicit. Passing it by `ref` or `in` wouldn't help: the interceptor has to keep the signature of the call it replaces, which takes the argument by value.
+If you need a mutable struct, make it implement the interface or wrap it in a class - both make the copy explicit. Passing it by `ref` or `in` wouldn't help: the interceptor has to keep the signature of the call it replaces, which takes the argument by value. The same restriction applies to a [duck-typed constraint](constrained_duck_typing.md), where the adapter also holds a copy.
 
 A `[DuckTyped]` method *on* a struct is a different thing and works: the receiver is passed by reference, so mutations reach the caller's value.
 
@@ -215,3 +229,5 @@ The generated fallback for a `[DuckTyped]` extension method has an unconstrained
 ## Allocations
 
 Passing an adapter as an interface boxes it: 24 bytes for a class argument, more for a struct, and `Duck.As` with a `readonly struct` allocates twice. The JIT often removes that box when nothing escapes your method, but don't rely on it. See [Benchmarks](benchmarks.md) for measured numbers and [Allocations](concepts.md#allocations) for the mechanics.
+
+A `[DuckTyped]` method whose duck type is a constrained type parameter (`where T : IShape`) allocates nothing at all, because the adapter is passed as a type argument instead of an interface - see [Constrained duck typing](constrained_duck_typing.md).

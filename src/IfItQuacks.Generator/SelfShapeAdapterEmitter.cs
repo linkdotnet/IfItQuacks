@@ -1,3 +1,4 @@
+using System;
 using System.Text;
 using Microsoft.CodeAnalysis;
 
@@ -13,8 +14,10 @@ internal static class SelfShapeAdapterEmitter
     public static string Emit(INamedTypeSymbol shape, INamedTypeSymbol concreteType, string adapterName, Compilation compilation)
     {
         var concrete = FullName(concreteType);
-        // The interface knows nothing about the concrete type, so every occurrence of it came from the self type parameter.
-        string Self(string text) => text.Replace(concrete, adapterName);
+        // Only a self-referencing shape (IAddable<Money>) mentions the concrete type; for any other shape a
+        // name merely starting with it (N.Person vs N.PersonShape) must be left alone.
+        var isSelfReferential = Mentions(shape, concreteType);
+        string Self(string text) => isSelfReferential ? ReplaceType(text, concrete, adapterName) : text;
 
         var sb = new StringBuilder();
         sb.AppendLine($"    internal readonly struct {adapterName} : {Self(FullName(shape))}, global::IfItQuacks.IDuckAdapter");
@@ -110,4 +113,32 @@ internal static class SelfShapeAdapterEmitter
         SymbolEqualityComparer.Default.Equals(type, concreteType);
 
     private static string FullName(ITypeSymbol type) => type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+    private static bool Mentions(ITypeSymbol type, INamedTypeSymbol self) =>
+        SymbolEqualityComparer.Default.Equals(type, self) ||
+        (type is INamedTypeSymbol named && named.TypeArguments.Any(t => Mentions(t, self))) ||
+        (type is IArrayTypeSymbol array && Mentions(array.ElementType, self));
+
+    /// <summary>Replaces <paramref name="concrete"/> only where it is a whole type name, not a prefix of a longer one.</summary>
+    private static string ReplaceType(string text, string concrete, string adapterName)
+    {
+        var sb = new StringBuilder(text.Length);
+        var start = 0;
+
+        while (true)
+        {
+            var index = text.IndexOf(concrete, start, StringComparison.Ordinal);
+            if (index < 0)
+            {
+                sb.Append(text, start, text.Length - start);
+                return sb.ToString();
+            }
+
+            var after = index + concrete.Length;
+            var continues = after < text.Length && (char.IsLetterOrDigit(text[after]) || text[after] is '_' or '.');
+            sb.Append(text, start, index - start);
+            sb.Append(continues ? concrete : adapterName);
+            start = after;
+        }
+    }
 }

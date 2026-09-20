@@ -26,6 +26,20 @@ public sealed class Person
     public int Age { get; init; } = 40;
 }
 
+/// <summary>Three distinct types fitting <see cref="IPerson"/>, so one interface call site sees three
+/// implementations and the JIT can no longer devirtualize it.</summary>
+public sealed class Employee
+{
+    public string Name { get; init; } = "Steven";
+    public int Age { get; init; } = 40;
+}
+
+public sealed class Mallard
+{
+    public string Name { get; init; } = "Donald";
+    public int Age { get; init; } = 3;
+}
+
 public sealed class RealPerson : IPerson
 {
     public string Name { get; init; } = "Steven";

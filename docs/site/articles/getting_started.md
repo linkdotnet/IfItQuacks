@@ -287,7 +287,25 @@ The generated adapter is its own type argument (`Adapter : IAddable<Adapter>`) a
 public static T Add<T>(T first, T second) where T : System.Numerics.IAdditionOperators<T, T, T> => first + second;
 ```
 
-Instance members of the constraint are forwarded too, as long as their signature doesn't use the self type. Every type parameter needs exactly one interface constraint used by a by-value parameter, the method can't also have interface parameters, and all arguments bound to the same type parameter must have the same type ([`IFITQUACKS004`](diagnostics.md#ifitquacks004)).
+Instance members of the constraint are forwarded too, as long as their signature doesn't use the self type. Every type parameter needs exactly one interface constraint used by a by-value parameter, and all arguments bound to the same type parameter must have the same type ([`IFITQUACKS004`](diagnostics.md#ifitquacks004)).
+
+## Duck typing without allocations
+
+A constraint isn't only for `static abstract` members. Any duck type can be written that way, and doing so is how you get a duck-typed call that allocates nothing:
+
+```csharp
+public static partial class Ops
+{
+    [DuckTyped]
+    public static string Greet<T>(T named) where T : INameable => $"Hello, {named.Name}!";
+}
+
+Ops.Greet(new Person());   // same call, no adapter is boxed
+```
+
+With an interface parameter the adapter is boxed as the interface; with a constraint it is passed as the *type argument*, so the runtime specializes the method per shape and the forwarders inline. Measured, that is the difference between `3,694 ns` plus 24 bytes per call and `562 ns` with nothing allocated.
+
+Constrained parameters can sit next to ordinary interface parameters, work as extension methods, and accept several independent type parameters. They can't take anonymous types, because the generated overload has to name the argument's type. See [Constrained duck typing](constrained_duck_typing.md) for the full picture.
 
 ## Converting explicitly
 

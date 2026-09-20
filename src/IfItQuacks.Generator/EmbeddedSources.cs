@@ -14,6 +14,27 @@ internal static class EmbeddedSources
             {
             }
 
+            /// <summary>Fills a partial interface with members derived from <typeparamref name="TSource"/>.
+            /// Because matching is structural, every type carrying those members satisfies the result.</summary>
+            [System.AttributeUsage(System.AttributeTargets.Interface, AllowMultiple = true)]
+            internal sealed class DuckShapeAttribute<TSource> : System.Attribute
+            {
+                /// <summary>Only these members are derived. Mutually exclusive with <see cref="Omit"/>.</summary>
+                public string[] Pick { get; set; } = new string[0];
+
+                /// <summary>Every member except these is derived. Mutually exclusive with <see cref="Pick"/>.</summary>
+                public string[] Omit { get; set; } = new string[0];
+
+                /// <summary>Makes every derived member's type nullable.</summary>
+                public bool Optional { get; set; }
+
+                /// <summary>Drops the setters of the derived properties and indexers.</summary>
+                public bool Readonly { get; set; }
+
+                /// <summary>Derives methods, events and indexers as well, not only properties and fields.</summary>
+                public bool IncludeMethods { get; set; }
+            }
+
             /// <summary>Converts values to interfaces they structurally satisfy.</summary>
             internal static class Duck
             {

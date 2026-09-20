@@ -68,6 +68,22 @@ internal static class Diagnostics
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
+    public static readonly DiagnosticDescriptor MappedShapeNotPartialInterface = new(
+        id: "IFITQUACKS010",
+        title: "Mapped shape target must be a partial interface",
+        messageFormat: "'{0}' is marked [DuckShape<>] but {1}",
+        category: "IfItQuacks",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor UnsupportedMappedShape = new(
+        id: "IFITQUACKS011",
+        title: "Unsupported [DuckShape<>] usage",
+        messageFormat: "'{0}' cannot be derived from '{1}': {2}",
+        category: "IfItQuacks",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
     public static readonly DiagnosticDescriptor ConversionTargetNotShape = new(
         id: "IFITQUACKS007",
         title: "Duck conversion target must be an interface",

@@ -7,6 +7,8 @@ internal sealed record GeneratedFile(string Name, string Source);
 // Prefix and suffix wrap the members in their containing namespace and types, so overloads from different call sites share one file.
 internal sealed record OverloadMember(string FileName, string Prefix, string Suffix, string Member);
 
+internal sealed record MappedShapeOutput(GeneratedFile? File, EquatableArray<Diagnostic> Diagnostics);
+
 internal sealed record DuckTypedMethodOutput(string Name, DuckMethodRef Reference, GeneratedFile? Fallback, EquatableArray<Diagnostic> Diagnostics);
 
 // An extension method call on a receiver that doesn't implement the interface has no symbol, so it is looked up by name instead.

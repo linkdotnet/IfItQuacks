@@ -97,6 +97,39 @@ public record CustomerDto(string Name, string Email);
 var dto = Duck.To<CustomerDto>(customer); // new CustomerDto(customer.Name, customer.Email)
 ```
 
+### Types derived from types
+
+`Pick`, `Omit`, `Partial`, `Readonly` and intersections, like TypeScript's mapped types. A derived
+interface would be dead weight in C# - under structural typing every fitting type satisfies it:
+
+```csharp
+[DuckShape<Customer>(Omit = [nameof(Customer.PasswordHash)], Readonly = true)]
+public partial interface ICustomerView;   // int Id { get; } string Name { get; } string Email { get; }
+
+Render(new Customer());                                // the entity
+Render(new CustomerRow(2, "Donald", "d@example.com")); // a DTO
+Render(new { Id = 3, Name = "Daisy", Email = "" });    // an object literal
+```
+
+See [Mapped shapes](https://linkdotnet.github.io/IfItQuacks/articles/mapped_shapes.html).
+
+### Zero-allocation duck typing
+
+Write the duck type as a constrained type parameter and the adapter is passed as a *type argument*
+instead of an interface - nothing is boxed, and the runtime specializes the method per shape:
+
+```csharp
+[DuckTyped]
+public static int Describe<T>(T person) where T : IPerson => person.Name.Length + person.Age;
+
+Ops.Describe(new Person());   // same call, 0 bytes allocated
+```
+
+Measured per 1000 calls: `3,694 ns` and 24,000 B as an interface parameter, `562 ns` and nothing as a
+constraint - the same as putting the concrete type in the signature. With three shapes sharing one
+method it is `10,459 ns` against `3,005 ns`, because a constrained call has no virtual dispatch left to
+guess. See [Constrained duck typing](https://linkdotnet.github.io/IfItQuacks/articles/constrained_duck_typing.html).
+
 ### Fields count as properties
 
 ```csharp
@@ -134,6 +167,8 @@ Duck.Unwrap(Duck.As<INamed>(person)) is Person;          // true
 - [How does it work?](https://linkdotnet.github.io/IfItQuacks/articles/concepts.html) - including what gets allocated
 - [Diagnostics](https://linkdotnet.github.io/IfItQuacks/articles/diagnostics.html)
 - [Benchmarks](https://linkdotnet.github.io/IfItQuacks/articles/benchmarks.html)
+- [Mapped shapes](https://linkdotnet.github.io/IfItQuacks/articles/mapped_shapes.html) - Pick, Omit, Partial, Readonly
+- [Constrained duck typing](https://linkdotnet.github.io/IfItQuacks/articles/constrained_duck_typing.html) - the allocation-free form
 - [Known limitations](https://linkdotnet.github.io/IfItQuacks/articles/known_limitations.html)
 
 Runnable examples live in [`samples`](samples).

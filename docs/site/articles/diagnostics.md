@@ -105,3 +105,27 @@ public class OnlyName { public string Name { get; set; } = ""; }
 
 Duck.To<PersonDto>(new OnlyName()); // error IFITQUACKS009: no member of the source fills 'Age'
 ```
+
+## IFITQUACKS010
+
+**Mapped shape target must be a partial interface**
+
+`[DuckShape<T>]` fills a second declaration of the interface, so the interface - and every type around it - has to be `partial`. A generic or `file`-local containing type is reported as well.
+
+```csharp
+[DuckShape<Customer>]
+public interface ICustomerView;   // error IFITQUACKS010: it is not declared 'partial'
+```
+
+## IFITQUACKS011
+
+**Unsupported [DuckShape<>] usage**
+
+The mapping can't be applied: `Pick` and `Omit` are both set, a name in `Pick` or `Omit` is not a public instance member of the source, the source is not a named class, struct, record or interface, the mapping derives no member at all, or a derived member's type is less accessible than the interface.
+
+```csharp
+[DuckShape<Customer>(Omit = ["Nope"])]
+public partial interface ICustomerView;   // error IFITQUACKS011: 'Nope' is not a public instance member of the source
+```
+
+See [Mapped shapes](mapped_shapes.md).
