@@ -119,6 +119,27 @@ public class AdapterIdentityTests
     }
 
     [Fact]
+    public void DuckTypedMethod_SeesAdapter_NotOriginal()
+    {
+        var source = Shapes + """
+
+            public static partial class Ops
+            {
+                [DuckTyped] public static string ViaInterface(INamed n) => $"{n is Person}|{Duck.Unwrap(n) is Person}";
+                [DuckTyped] public static string ViaConstraint<T>(T n) where T : INamed => $"{n is Person}|{Duck.Unwrap(n) is Person}";
+                [DuckTyped] public static T Echo<T>(T n) where T : INamed => n;
+            }
+
+            public static class Entry
+            {
+                public static string Run() => $"{Ops.ViaInterface(new Person())}|{Ops.ViaConstraint(new Person())}|{Ops.Echo(new Person()).GetType().Name}";
+            }
+            """;
+
+        Assert.Equal("False|True|False|True|Person", GeneratorTestHelper.CompileAndRun(source));
+    }
+
+    [Fact]
     public void ShapeDeclaringObjectMembers_StillCompiles()
     {
         const string source = """

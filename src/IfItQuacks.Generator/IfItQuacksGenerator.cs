@@ -41,7 +41,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             .ForAttributeWithMetadataName(
                 DuckTypedAttributeName,
                 predicate: static (node, _) => node is MethodDeclarationSyntax,
-                transform: static (ctx, _) => AnalyzeDuckTypedMethod(ctx));
+                transform: static (ctx, ct) => AnalyzeDuckTypedMethod(ctx, ct));
 
         context.RegisterSourceOutput(duckTypedMethods, static (spc, method) => EmitDuckTypedMethod(spc, method));
 
@@ -88,11 +88,13 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             static (spc, sites) => EmitCallSites(spc, [.. sites.Left, .. sites.Right]));
     }
 
-    private static DuckTypedMethodOutput AnalyzeDuckTypedMethod(GeneratorAttributeSyntaxContext ctx)
+    private static DuckTypedMethodOutput AnalyzeDuckTypedMethod(GeneratorAttributeSyntaxContext ctx, CancellationToken ct)
     {
         var method = (IMethodSymbol)ctx.TargetSymbol;
         var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
         var isValid = ValidateDuckTypedMethod(method, ctx.TargetNode.GetLocation(), diagnostics);
+        if (isValid && ctx.SemanticModel.GetOperation(ctx.TargetNode, ct) is { } body)
+            diagnostics.AddRange(AdapterCastFinder.Find(body, GetAdaptedParameters(method), ctx.SemanticModel.Compilation));
 
         var fallback = isValid && !method.IsGenericMethod ? CreateFallbackOverload(method) : null;
         var reference = new DuckMethodRef(method.Name, MetadataName(method.ContainingType), isValid && method.IsExtensionMethod);
@@ -1080,6 +1082,19 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         method.Parameters
             .Where(p => p is { RefKind: RefKind.None, Type.TypeKind: TypeKind.Interface })
             .ToImmutableArray();
+
+    // Every parameter an adapter can arrive in, with the interface that adapter implements.
+    private static Dictionary<IParameterSymbol, ITypeSymbol> GetAdaptedParameters(IMethodSymbol method)
+    {
+        var shapes = GetDuckParameters(method).ToDictionary<IParameterSymbol, ITypeSymbol, IParameterSymbol>(p => p, p => p.Type, SymbolEqualityComparer.Default);
+        foreach (var typeParameter in GetConstraintTypeParameters(method))
+        {
+            foreach (var parameter in method.Parameters.Where(p => p.RefKind == RefKind.None && SymbolEqualityComparer.Default.Equals(p.Type, typeParameter)))
+                shapes[parameter] = typeParameter.ConstraintTypes[0];
+        }
+
+        return shapes;
+    }
 
     private static bool IsDuckTyped(IMethodSymbol method) =>
         method.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == DuckTypedAttributeName);

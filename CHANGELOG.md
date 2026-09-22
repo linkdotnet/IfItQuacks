@@ -6,6 +6,11 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 ## [Unreleased]
 
+### Added
+
+- `IFITQUACKS012` warns when a `[DuckTyped]` method casts or type-tests a duck-typed parameter for a concrete type. Such
+  checks fail whenever the argument was adapted, because the method receives the adapter; use `Duck.Unwrap` instead.
+
 ### Changed
 
 - **Breaking:** an adapter no longer equals the instance it wraps. `Duck.As<INamed>(person).Equals(person)` was true

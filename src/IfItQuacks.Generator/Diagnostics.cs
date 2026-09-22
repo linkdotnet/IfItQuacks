@@ -91,4 +91,16 @@ internal static class Diagnostics
         category: "IfItQuacks",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor AdapterCast = new(
+        id: "IFITQUACKS012",
+        title: "Duck-typed parameter is cast to a concrete type",
+        messageFormat: "Whenever the argument doesn't implement '{1}' itself, '{0}' receives a generated adapter instead of the caller's instance, so this {2} '{3}' never succeeds for such calls; use 'Duck.Unwrap({0})' to get the original instance",
+        category: "IfItQuacks",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "An argument that only matches the interface structurally is wrapped in a generated adapter, and that adapter is what the method receives - " +
+                     "for a duck-typed constraint the type argument is the adapter type itself. A cast, 'as' or type pattern for the original type therefore " +
+                     "fails for these calls, while it succeeds for arguments implementing the interface. Conversion operators can't help: the compiler only " +
+                     "sees the interface or type parameter. 'Duck.Unwrap' returns the original instance in both cases.");
 }

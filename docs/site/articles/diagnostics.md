@@ -4,7 +4,7 @@ uid: diagnostics
 
 # Diagnostics
 
-All diagnostics are reported as errors in the `IfItQuacks` category.
+All diagnostics are in the `IfItQuacks` category and reported as errors, except the warning [`IFITQUACKS012`](#ifitquacks012).
 
 ## IFITQUACKS001
 
@@ -129,3 +129,26 @@ public partial interface ICustomerView;   // error IFITQUACKS011: 'Nope' is not 
 ```
 
 See [Mapped shapes](mapped_shapes.md).
+
+## IFITQUACKS012
+
+**Duck-typed parameter is cast to a concrete type** (warning)
+
+An argument that only matches the interface structurally is wrapped in a generated adapter, and that adapter is what your method receives. With a [duck-typed constraint](constrained_duck_typing.md), `T` is the adapter type itself. A cast, `as` or type pattern on the parameter for a concrete type, typically the caller's own type, therefore fails for these calls. It succeeds for arguments that implement the interface, so the method behaves differently depending on the caller.
+
+```csharp
+[DuckTyped]
+public static string Describe(INamed named) =>
+    named is Person p ? p.Nickname : named.Name; // warning IFITQUACKS012: Whenever the argument doesn't implement 'INamed' itself,
+                                                 // 'named' receives a generated adapter instead of the caller's instance, so this
+                                                 // type test for 'Person' never succeeds for such calls; use 'Duck.Unwrap(named)'
+                                                 // to get the original instance
+```
+
+Conversion operators can't bridge this: C# doesn't allow user-defined conversions from an interface, and inside a generic method the compiler doesn't know the adapter type. Test the original instance instead:
+
+```csharp
+Duck.Unwrap(named) is Person p ? p.Nickname : named.Name;
+```
+
+Casts and type tests for interfaces and type parameters are not reported, because the adapter may implement those.

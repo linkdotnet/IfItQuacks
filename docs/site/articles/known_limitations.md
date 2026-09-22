@@ -225,6 +225,19 @@ Duck.Unwrap(view).Equals(person);     // true
 view.Equals(Duck.As<IOther>(person)); // false - a different adapter type
 ```
 
+Inside a `[DuckTyped]` method the parameter is the adapter, not your instance - with a [duck-typed constraint](constrained_duck_typing.md) `T` is the adapter type itself. Casting back to the original type fails at runtime and is reported as [`IFITQUACKS012`](diagnostics.md#ifitquacks012):
+
+```csharp
+[DuckTyped] static string Name<T>(T named) where T : INamed
+{
+    var a = (Person)(object)named;        // InvalidCastException
+    var b = (Person)Duck.Unwrap(named)!;  // works (boxes the adapter)
+    return named.Name;
+}
+```
+
+A returned `T` is converted back by the generated overload, so `Echo(person)` still returns a `Person`. If the argument already implements the interface, there is no adapter and the cast succeeds.
+
 ## Extension methods
 
 The generated fallback for a `[DuckTyped]` extension method has an unconstrained type parameter, so the method shows up on every type in scope and a receiver that doesn't fit reports [`IFITQUACKS001`](diagnostics.md#ifitquacks001) rather than `CS1061`. Keep such methods in a namespace you import deliberately.

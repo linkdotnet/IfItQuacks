@@ -125,6 +125,8 @@ adapter, nothing generated.
   ([`IFITQUACKS004`](diagnostics.md#ifitquacks004)).
 - **Mutable structs and `ref struct`s** are still rejected
   ([`IFITQUACKS006`](diagnostics.md#ifitquacks006)), because the adapter holds a copy.
+- **`T` is the adapter, not your type.** `typeof(T)` names the generated adapter and a cast back to the
+  argument's type fails at runtime; use `Duck.Unwrap` (see [Identity](known_limitations.md#identity)).
 - Calls the generator can't see still fall through to the generic method itself, which requires the
   argument to implement the interface nominally.
 - One adapter and one overload are generated per shape and argument type, so a method called with many
