@@ -6,6 +6,8 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 ## [Unreleased]
 
+## [v1.4.1] - 2026-09-22
+
 ### Changed
 
 - `Duck.Merge` adapters compare and hash over every merged value instead of only the first, so
@@ -134,7 +136,8 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 - Anonymous types can be passed to `[DuckTyped]` methods and `Duck.As`.
 - Adapters forward `Equals`, `GetHashCode` and `ToString` to the wrapped instance; `Duck.Unwrap` returns it.
 
-[unreleased]: https://github.com/linkdotnet/IfItQuacks/compare/v1.4.0...HEAD
+[unreleased]: https://github.com/linkdotnet/IfItQuacks/compare/v1.4.1...HEAD
+[v1.4.1]: https://github.com/linkdotnet/IfItQuacks/compare/v1.4.0...v1.4.1
 [v1.4.0]: https://github.com/linkdotnet/IfItQuacks/compare/v1.3.0...v1.4.0
 [v1.3.0]: https://github.com/linkdotnet/IfItQuacks/compare/v1.2.0...v1.3.0
 [v1.2.0]: https://github.com/linkdotnet/IfItQuacks/compare/v1.1.0...v1.2.0
