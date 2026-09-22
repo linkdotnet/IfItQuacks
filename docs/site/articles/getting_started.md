@@ -19,7 +19,7 @@ The generator adds the following `internal` types to the `IfItQuacks` namespace 
 | Type | Purpose |
 |---|---|
 | `DuckTypedAttribute` | Marks a method whose interface parameters accept any type that structurally matches the interface. |
-| `Duck` | `Duck.As<TShape>(value)` converts a value to an interface it structurally satisfies; `Duck.Stub<TShape>(value)` fills the rest with members that throw; `Duck.Merge<TShape>(first, second)` takes each member from the first value providing it; `Duck.To<TTarget>(value)` copies into a new value; `Duck.Unwrap(value)` returns the original instance behind an adapter. |
+| `Duck` | `Duck.As<TShape>(value)` converts a value to an interface it structurally satisfies; `Duck.Stub<TShape>(value)` fills the rest with members that throw; `Duck.Merge<TShape>(first, second)` takes each member from the value implementing its interface, else the first value providing it; `Duck.To<TTarget>(value)` copies into a new value; `Duck.Unwrap(value)` returns the original instance behind an adapter. |
 | `DuckTypeMismatchException` | Thrown at runtime if a call couldn't be verified at compile time and the value doesn't implement the interface. |
 | `DuckStubException` | Thrown when a member of a `Duck.Stub` that nothing implements is used. |
 
@@ -228,7 +228,7 @@ repository.Save(new Order(2, "..."));  // throws DuckStubException
 
 A member that *is* there but doesn't fit is still reported with [`IFITQUACKS001`](diagnostics.md#ifitquacks001) - a stub fills in what is missing, not what is wrong.
 
-`Duck.Merge<TShape>(first, second)` (and a three-value overload) takes every member from the first value that provides it, which replaces a single member of a real object:
+`Duck.Merge<TShape>(first, second)` (and a three-value overload) takes every member from the first value that provides it, which replaces a single member of a real object. A value that implements the interface declaring a member takes precedence, so interfaces sharing a member name each get their own implementer:
 
 ```csharp
 Order? saved = null;

@@ -199,7 +199,10 @@ internal static class AdapterEmitter
             var receiver = sources[found.Index].IsAnonymousType
                 ? $"{CastByExample}(_value{found.Index}, static () => {AnonymousWitness(sources[found.Index])})"
                 : $"_value{found.Index}";
-            EmitMember(sb, member, found.Counterpart, Qualify(receiver, sources[found.Index], found.Counterpart), Owner);
+            receiver = found.Counterpart.ContainingType.TypeKind == TypeKind.Interface
+                ? $"((global::{found.Counterpart.ContainingType.ToDisplayString()}){receiver})"
+                : Qualify(receiver, sources[found.Index], found.Counterpart);
+            EmitMember(sb, member, found.Counterpart, receiver, Owner);
         }
 
         EmitMergeIdentityMembers(sb, sources, adapterName);
@@ -211,14 +214,23 @@ internal static class AdapterEmitter
         return sb.ToString();
     }
 
-    /// <summary>The first source providing <paramref name="member"/>, or <c>null</c> if none does.</summary>
+    /// <summary>
+    /// The first source implementing <paramref name="member"/>'s interface, else the first providing it structurally, or <c>null</c> if none does.
+    /// </summary>
     public static (int Index, ISymbol Counterpart)? FindSource(ImmutableArray<INamedTypeSymbol> sources, ISymbol member, Compilation compilation)
     {
+        for (var i = 0; i < sources.Length; i++)
+            if (Implements(sources[i], member.ContainingType))
+                return (i, member);
         for (var i = 0; i < sources.Length; i++)
             if (ShapeMatcher.FindCounterpart(member, sources[i], compilation) is { } counterpart)
                 return (i, counterpart);
         return null;
     }
+
+    private static bool Implements(INamedTypeSymbol source, INamedTypeSymbol @interface) =>
+        SymbolEqualityComparer.Default.Equals(source, @interface) ||
+        source.AllInterfaces.Any(i => SymbolEqualityComparer.Default.Equals(i, @interface));
 
     // Members are implemented explicitly, so interfaces inheriting same-named members (IEnumerable<T>.GetEnumerator) or declaring object members don't clash.
     private static void EmitMethod(StringBuilder sb, IMethodSymbol method, IMethodSymbol counterpart, string receiver, Func<ISymbol, string> owner,

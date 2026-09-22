@@ -108,6 +108,65 @@ public class MergeTests
         Assert.Equal("True|True|False", GeneratorTestHelper.CompileAndRun(source));
     }
 
+    private const string SameMemberShapes = """
+        using IfItQuacks;
+
+        public interface IFirst { string Method(); }
+        public interface ISecond { string Method(); }
+        public interface IEmpty;
+        public interface IBoth : IFirst, ISecond;
+        public interface IEmptyAndSecond : IEmpty, ISecond;
+
+        public class FirstImpl : IFirst { public string Method() => "1"; }
+        public class SecondImpl : ISecond { public string Method() => "2"; }
+        public class EmptyImpl : IEmpty { public string Method() => "empty"; }
+        public class ExplicitSecondImpl : ISecond { string ISecond.Method() => "explicit"; }
+
+        """;
+
+    [Fact]
+    public void Merge_PrefersTheValueImplementingTheMembersInterface()
+    {
+        const string source = SameMemberShapes + """
+            public static class Entry
+            {
+                public static string Run() => Duck.Merge<IEmptyAndSecond>(new EmptyImpl(), new SecondImpl()).Method();
+            }
+            """;
+
+        Assert.Equal("2", GeneratorTestHelper.CompileAndRun(source));
+    }
+
+    [Fact]
+    public void Merge_SameMemberFromTwoInterfaces_RoutesEachToItsImplementer()
+    {
+        const string source = SameMemberShapes + """
+            public static class Entry
+            {
+                public static string Run()
+                {
+                    var merged = Duck.Merge<IBoth>(new FirstImpl(), new SecondImpl());
+                    return $"{((IFirst)merged).Method()}|{((ISecond)merged).Method()}";
+                }
+            }
+            """;
+
+        Assert.Equal("1|2", GeneratorTestHelper.CompileAndRun(source));
+    }
+
+    [Fact]
+    public void Merge_WithAnExplicitInterfaceImplementation_UsesIt()
+    {
+        const string source = SameMemberShapes + """
+            public static class Entry
+            {
+                public static string Run() => Duck.Merge<IEmptyAndSecond>(new EmptyImpl(), new ExplicitSecondImpl()).Method();
+            }
+            """;
+
+        Assert.Equal("explicit", GeneratorTestHelper.CompileAndRun(source));
+    }
+
     [Fact]
     public void Merge_WithAMemberNoValueProvides_ReportsIfItQuacks001()
     {

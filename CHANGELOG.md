@@ -10,6 +10,9 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 - `Duck.Merge` adapters compare and hash over every merged value instead of only the first, so
   `Merge(new { Value = 1 }, new { Test = 2 })` no longer equals `Merge(new { Value = 1 }, new { Test = 3 })`.
+- `Duck.Merge` takes a member from the value that implements the member's interface before falling back to the first
+  value providing it structurally. Interfaces sharing a member name are routed to their own implementer, and explicit
+  interface implementations are used.
 
 ## [v1.4.0] - 2026-09-20
 

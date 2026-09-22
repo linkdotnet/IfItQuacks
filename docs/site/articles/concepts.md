@@ -164,7 +164,7 @@ internal readonly struct StubAdapter_IRepository_Anonymous_... : IRepository, ID
 }
 ```
 
-`Duck.Merge` holds one field per value and takes every member from the first field providing it. `IDuckAdapter.Value` and `ToString` forward to the first value; `Equals` and `GetHashCode` cover every value, so two merges are equal only when all their values are.
+`Duck.Merge` holds one field per value and takes every member from the first field whose type implements the member's interface, else from the first field providing it structurally. `IDuckAdapter.Value` and `ToString` forward to the first value; `Equals` and `GetHashCode` cover every value, so two merges are equal only when all their values are.
 
 ## Sequences
 
