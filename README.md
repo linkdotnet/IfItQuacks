@@ -160,6 +160,7 @@ Duck.Unwrap(Duck.As<INamed>(person)) is Person;          // true
 - `static abstract` members and operators through duck-typed constraints (`where T : IAddable<T>`), generic math included
 - Instance and static methods, `ref`/`out`, `params`, default values and named arguments
 - Zero setup: install the package, no project file changes
+- Cheap at build time: ~0.4 ms per duck-typed call site, nearly nothing when unused ([Benchmarks](https://linkdotnet.github.io/IfItQuacks/articles/benchmarks.html#compile-time-cost))
 
 ## Documentation
 

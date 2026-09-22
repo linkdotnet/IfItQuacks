@@ -42,7 +42,7 @@ What this says:
 ## One method, several shapes
 
 An interface parameter is not automatically slow. If exactly one shape reaches it, the JIT guesses the
-target and the call is as fast as a direct one - that is what the `588 ns` row above shows. The guess is
+target and the call is as fast as a direct one - that is what the `563 ns` row above shows. The guess is
 what breaks when several shapes share a method, and it is the case a constrained type parameter is built
 for: each shape gets its own specialized copy, so there is nothing left to guess.
 
@@ -89,6 +89,38 @@ What this says:
 - **Reading through a view costs ~15-20% over touching the entity directly**, the same as reading through any interface. That is the price of the interface call, not of IfItQuacks.
 - **Creating the view dominates.** If you read a few members once, the conversion is the expensive part; if you keep the view and read it repeatedly, the per-read cost is what the third row shows.
 - It is not a mapper, though: a view forwards to the live entity and can't rename members, flatten nested objects or convert types. See [Known limitations](known_limitations.md#members-match-by-name-and-assignable-type).
+
+## Compile-time cost
+
+What the generator adds to your build. The benchmarks live in `benchmarks/IfItQuacks.Generator.Benchmarks`:
+
+```bash
+dotnet run --project benchmarks/IfItQuacks.Generator.Benchmarks -c Release -- --filter '*'
+```
+
+Each scenario generates a project with **N** call sites, each in its own method:
+
+- *distinct types*: N classes, each passed once to a `[DuckTyped]` method (N adapters)
+- *same type*: one class passed from N call sites (1 adapter, N interceptors)
+- *`Duck.As`*: N classes converted with `Duck.As<INamed>`
+
+Time spent for 1000 call sites, and per call site (`--job short`, so expect ±20%):
+
+| Scenario | Generator, full build | Generator, after an edit | Build with vs. without IfItQuacks |
+|---|---:|---:|---:|
+| No duck typing (baseline) | 3.8 ms | 0.8 ms | 31 ms vs. 24 ms |
+| Distinct types | 64 ms · **64 µs** | 73 ms · 73 µs | 468 ms vs. 64 ms · **0.40 ms** |
+| Same type | 47 ms · **47 µs** | 21 ms · 21 µs | 300 ms vs. 16 ms · **0.28 ms** |
+| `Duck.As` | 64 ms · **64 µs** | 27 ms · 27 µs | 505 ms vs. 51 ms · **0.45 ms** |
+
+What this says:
+
+- **A project that doesn't use duck typing pays almost nothing**: the generator scans the syntax trees and finds nothing to do. The attributes it always adds cost a fixed ~5 ms per build.
+- **The generator itself costs about 50-70 µs per call site.** It runs the checks and emits the adapter and the interceptor.
+- **Most of the cost is compiling the generated code**, about 0.3-0.45 ms per duck-typed call site in total. As a rough guide, 100 call sites add ~40 ms to a build, and 1000 add ~0.4 s.
+- **Editing any file re-analyzes every call site**, because the analysis depends on the whole compilation. Only the output is cached. In the IDE this costs tens of microseconds per call site on each change.
+
+To measure your own project, build with `dotnet build -bl` and open the binlog in the [MSBuild Structured Log Viewer](https://msbuildlog.com/): the `Csc` task lists the time spent in each generator. `dotnet build -p:ReportAnalyzer=true -v:d` prints the same numbers to the console.
 
 ## Rules of thumb
 
