@@ -6,6 +6,11 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 ## [Unreleased]
 
+### Changed
+
+- `Duck.Merge` adapters compare and hash over every merged value instead of only the first, so
+  `Merge(new { Value = 1 }, new { Test = 2 })` no longer equals `Merge(new { Value = 1 }, new { Test = 3 })`.
+
 ## [v1.4.0] - 2026-09-20
 
 ### Added

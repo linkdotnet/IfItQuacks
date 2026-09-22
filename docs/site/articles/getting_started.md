@@ -238,7 +238,16 @@ spy.Save(order);   // the lambda
 spy.Find(1);       // the real repository
 ```
 
-`Duck.Unwrap` returns the first value. A member none of the values provides is reported with [`IFITQUACKS001`](diagnostics.md#ifitquacks001).
+`Duck.Unwrap` returns the first value. Equality covers every value, so merges of anonymous objects behave like records:
+
+```csharp
+var a = Duck.Merge<IMyObj>(new { Value = 1 }, new { Test = 2 });
+
+a.Equals(Duck.Merge<IMyObj>(new { Value = 1 }, new { Test = 2 }));   // true
+a.Equals(Duck.Merge<IMyObj>(new { Value = 1 }, new { Test = 3 }));   // false
+```
+
+A member none of the values provides is reported with [`IFITQUACKS001`](diagnostics.md#ifitquacks001).
 
 ## Sequences
 

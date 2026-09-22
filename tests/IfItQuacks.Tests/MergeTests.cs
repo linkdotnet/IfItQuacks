@@ -86,6 +86,29 @@ public class MergeTests
     }
 
     [Fact]
+    public void Merge_EqualityCoversEveryValue()
+    {
+        const string source = """
+            using IfItQuacks;
+
+            public interface IMyObj { int Value { get; } int Test { get; } }
+
+            public static class Entry
+            {
+                public static string Run()
+                {
+                    var a = Duck.Merge<IMyObj>(new { Value = 1 }, new { Test = 2 });
+                    var same = Duck.Merge<IMyObj>(new { Value = 1 }, new { Test = 2 });
+                    var other = Duck.Merge<IMyObj>(new { Value = 1 }, new { Test = 3 });
+                    return $"{a.Equals(same)}|{a.GetHashCode() == same.GetHashCode()}|{a.Equals(other)}";
+                }
+            }
+            """;
+
+        Assert.Equal("True|True|False", GeneratorTestHelper.CompileAndRun(source));
+    }
+
+    [Fact]
     public void Merge_WithAMemberNoValueProvides_ReportsIfItQuacks001()
     {
         const string source = Shapes + """

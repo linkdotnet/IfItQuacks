@@ -202,7 +202,7 @@ internal static class AdapterEmitter
             EmitMember(sb, member, found.Counterpart, Qualify(receiver, sources[found.Index], found.Counterpart), Owner);
         }
 
-        EmitIdentityMembers(sb, sources[0], "_value0");
+        EmitMergeIdentityMembers(sb, sources, adapterName);
 
         if (sources.Any(s => s.IsAnonymousType))
             sb.AppendLine($"        private static T {CastByExample}<T>(object value, global::System.Func<T> example) => (T)value;");
@@ -276,6 +276,18 @@ internal static class AdapterEmitter
         sb.AppendLine($"        public override bool Equals(object? obj) => global::System.Object.Equals({field}, global::IfItQuacks.Duck.Unwrap(obj));");
         sb.AppendLine($"        public override int GetHashCode() => {(isReference ? $"{field}?.GetHashCode() ?? 0" : $"{field}.GetHashCode()")};");
         sb.AppendLine($"        public override string ToString() => {(isReference ? $"{field}?.ToString()" : $"{field}.ToString()")} ?? string.Empty;");
+    }
+
+    // Two merges differing only in a later value would otherwise compare equal.
+    private static void EmitMergeIdentityMembers(StringBuilder sb, ImmutableArray<INamedTypeSymbol> sources, string adapterName)
+    {
+        var equalities = string.Join(" && ", sources.Select((_, i) => $"global::System.Object.Equals(_value{i}, other._value{i})"));
+        var hashes = sources.Select((s, i) => s.IsReferenceType || s.IsAnonymousType ? $"(_value{i}?.GetHashCode() ?? 0)" : $"_value{i}.GetHashCode()").ToList();
+        var hash = hashes.Skip(1).Aggregate(hashes[0], (acc, h) => $"({acc}) * -1521134295 + {h}");
+        var isReference = sources[0].IsReferenceType;
+        sb.AppendLine($"        public override bool Equals(object? obj) => obj is {adapterName} other && {equalities};");
+        sb.AppendLine($"        public override int GetHashCode() => unchecked({hash});");
+        sb.AppendLine($"        public override string ToString() => {(isReference ? "_value0?.ToString()" : "_value0.ToString()")} ?? string.Empty;");
     }
 
     // A member of the concrete type can hide the inherited one the shape was matched against, so the receiver is cast to its declaring type.
