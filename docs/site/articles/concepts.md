@@ -42,13 +42,13 @@ internal readonly struct ShapeAdapter_IDoable_A : global::IDoable, global::IfItQ
     public ShapeAdapter_IDoable_A(A value) => _value = value;
     object? global::IfItQuacks.IDuckAdapter.Value => _value;
     void global::IDoable.Do() => _value.Do();
-    public override bool Equals(object? obj) => global::System.Object.Equals(_value, global::IfItQuacks.Duck.Unwrap(obj));
+    public override bool Equals(object? obj) => obj is ShapeAdapter_IDoable_A other && global::System.Object.Equals(_value, other._value);
     public override int GetHashCode() => _value?.GetHashCode() ?? 0;
     public override string ToString() => _value?.ToString() ?? string.Empty;
 }
 ```
 
-One adapter is generated per interface/type combination. Interface members are implemented explicitly, so members with the same name from different interfaces (like `GetEnumerator()` of `IEnumerable<T>` and `IEnumerable`) don't clash. `Equals`, `GetHashCode` and `ToString` forward to the wrapped value, so adapters of the same instance are equal; `IDuckAdapter` lets `Duck.Unwrap` return that instance.
+One adapter is generated per interface/type combination. Interface members are implemented explicitly, so members with the same name from different interfaces (like `GetEnumerator()` of `IEnumerable<T>` and `IEnumerable`) don't clash. `Equals`, `GetHashCode` and `ToString` forward to the wrapped value, so adapters of the same instance are equal - to each other, not to the instance; `IDuckAdapter` lets `Duck.Unwrap` return that instance.
 
 If a member was matched with an assignable instead of an identical parameter type, the forwarder casts the argument (`_value.Add((object)item)`), so the call binds to exactly the member that was matched.
 

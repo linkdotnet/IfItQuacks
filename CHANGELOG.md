@@ -6,6 +6,13 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** an adapter no longer equals the instance it wraps. `Duck.As<INamed>(person).Equals(person)` was true
+  while `person.Equals(...)` was false, so a collection holding both depended on insertion order. Adapters of the same
+  type wrapping equal values are still equal and hash alike; `ToString` is still forwarded. Compare with the original
+  through `Duck.Unwrap`.
+
 ## [v1.4.2] - 2026-09-22
 
 ### Changed

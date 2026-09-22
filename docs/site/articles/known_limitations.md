@@ -205,7 +205,7 @@ A `[DuckTyped]` method *on* a struct is a different thing and works: the receive
 
 ## Identity
 
-Adapters forward `Equals`, `GetHashCode` and `ToString`, but every conversion creates its own adapter.
+Adapters of the same instance are equal and hash alike, and `ToString` is forwarded, but every conversion creates its own adapter.
 
 ```csharp
 var view = Duck.As<INamed>(person);
@@ -216,24 +216,14 @@ ReferenceEquals(view, other);  // false - two boxed adapters
 Duck.Unwrap(view) == person;   // true
 ```
 
-An adapter equals its original instance, but not the other way round - the original's `Equals` doesn't know about adapters:
+An adapter only equals adapters of its own type, never the original - compare with `Duck.Unwrap` instead:
 
 ```csharp
-view.Equals(person);  // true
-person.Equals(view);  // false
+view.Equals(person);                  // false
+person.Equals(view);                  // false
+Duck.Unwrap(view).Equals(person);     // true
+view.Equals(Duck.As<IOther>(person)); // false - a different adapter type
 ```
-
-Both hash alike, and hashed collections compare with the `Equals` of the element already stored. A collection holding both an adapter and its original therefore depends on insertion order:
-
-```csharp
-var wrappedFirst = new Dictionary<object, string> { [view] = "wrapped" };
-wrappedFirst[person] = "original";   // overwrites - Count 1 (Add would throw)
-
-var originalFirst = new Dictionary<object, string> { [person] = "original" };
-originalFirst[view] = "wrapped";     // new entry - Count 2
-```
-
-This needs a key type that can hold both: `object`, or an interface the original implements while being wrapped for a shape derived from it (`Duck.As<ITagged>(tag)` in a `Dictionary<INamed, T>` when `Tag` implements only `INamed`). Store either adapters or `Duck.Unwrap(...)` results, not a mix.
 
 ## Extension methods
 

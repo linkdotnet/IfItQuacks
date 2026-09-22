@@ -43,7 +43,7 @@ internal static class AdapterEmitter
 
         EmitInstanceMembers(sb, shape, concreteType, receiver, compilation, Owner);
 
-        EmitIdentityMembers(sb, concreteType);
+        EmitIdentityMembers(sb, concreteType, adapterName);
 
         if (concreteType.IsAnonymousType)
             sb.AppendLine($"        private static T {CastByExample}<T>(object value, global::System.Func<T> example) => (T)value;");
@@ -77,7 +77,7 @@ internal static class AdapterEmitter
 
             EmitInstanceMembers(sb, shape, concreteType, receiver, compilation, Owner);
             EmitStubMembers(sb, ShapeMatcher.FindUnimplementedMembers(shape, concreteType, compilation));
-            EmitIdentityMembers(sb, concreteType);
+            EmitIdentityMembers(sb, concreteType, adapterName);
 
             if (concreteType.IsAnonymousType)
                 sb.AppendLine($"        private static T {CastByExample}<T>(object value, global::System.Func<T> example) => (T)value;");
@@ -282,12 +282,13 @@ internal static class AdapterEmitter
         sb.AppendLine($"        event {@event.Type.ToDisplayString()} {owner(@event)}.{@event.Name} {{ add => {receiver}.{@event.Name} += value; remove => {receiver}.{@event.Name} -= value; }}");
 
     // Adapters are boxed as the shape, so without forwarding two views of the same instance would neither be equal nor hash alike.
-    public static void EmitIdentityMembers(StringBuilder sb, ITypeSymbol concreteType, string field = "_value")
+    // Equality is limited to the same adapter type: the original's Equals can't know about adapters, so equating the two would be one-sided.
+    public static void EmitIdentityMembers(StringBuilder sb, ITypeSymbol concreteType, string adapterName)
     {
         var isReference = concreteType.IsReferenceType;
-        sb.AppendLine($"        public override bool Equals(object? obj) => global::System.Object.Equals({field}, global::IfItQuacks.Duck.Unwrap(obj));");
-        sb.AppendLine($"        public override int GetHashCode() => {(isReference ? $"{field}?.GetHashCode() ?? 0" : $"{field}.GetHashCode()")};");
-        sb.AppendLine($"        public override string ToString() => {(isReference ? $"{field}?.ToString()" : $"{field}.ToString()")} ?? string.Empty;");
+        sb.AppendLine($"        public override bool Equals(object? obj) => obj is {adapterName} other && global::System.Object.Equals(_value, other._value);");
+        sb.AppendLine($"        public override int GetHashCode() => {(isReference ? "_value?.GetHashCode() ?? 0" : "_value.GetHashCode()")};");
+        sb.AppendLine($"        public override string ToString() => {(isReference ? "_value?.ToString()" : "_value.ToString()")} ?? string.Empty;");
     }
 
     // Two merges differing only in a later value would otherwise compare equal.

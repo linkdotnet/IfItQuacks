@@ -48,7 +48,7 @@ internal static class SelfShapeAdapterEmitter
 
         AdapterEmitter.EmitInstanceMembers(sb, shape, concreteType, "_value", compilation,
             member => Self(AdapterEmitter.Owner(member)));
-        AdapterEmitter.EmitIdentityMembers(sb, concreteType);
+        AdapterEmitter.EmitIdentityMembers(sb, concreteType, adapterName);
 
         sb.AppendLine("    }");
         return sb.ToString();

@@ -351,7 +351,7 @@ Anonymous type properties are read-only, so interfaces with setters, methods, in
 
 ## Identity
 
-Adapters forward `Equals`, `GetHashCode` and `ToString` to the original instance, so two adapters of the same object are equal and collapse in a `HashSet` or as dictionary keys. `Duck.Unwrap` gives you the original instance back:
+Adapters forward `Equals`, `GetHashCode` and `ToString` to the original instance, so two adapters of the same object are equal and collapse in a `HashSet` or as dictionary keys. An adapter never equals the original itself; `Duck.Unwrap` gives you the original instance back:
 
 ```csharp
 var person = new Person();
@@ -359,6 +359,7 @@ INameable a = Duck.As<INameable>(person), b = Duck.As<INameable>(person);
 
 a.Equals(b);                        // true
 new HashSet<INameable> { a, b }.Count; // 1
+a.Equals(person);                   // false
 Duck.Unwrap(a) is Person;           // true
 ReferenceEquals(a, b);              // false - every conversion creates a new adapter
 ```

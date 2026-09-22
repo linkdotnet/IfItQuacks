@@ -140,13 +140,14 @@ public class LegacyPerson { public string Name = ""; }
 new Greeter().Greet(new LegacyPerson { Name = "Steven" }, new Mallard());
 ```
 
-### Identity is preserved
+### Equality
 
-Adapters forward `Equals`, `GetHashCode` and `ToString` to the original instance, so they work as dictionary keys and in sets. `Duck.Unwrap` gives you the original back:
+Adapters of the same instance are equal and hash alike, so they work as dictionary keys and in sets; `ToString` is forwarded. An adapter never equals the original itself - `Duck.Unwrap` gives you that back:
 
 ```csharp
 var person = new Person();
 Duck.As<INamed>(person).Equals(Duck.As<INamed>(person)); // true
+Duck.As<INamed>(person).Equals(person);                  // false
 Duck.Unwrap(Duck.As<INamed>(person)) is Person;          // true
 ```
 

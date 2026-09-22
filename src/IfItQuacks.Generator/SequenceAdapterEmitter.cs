@@ -73,7 +73,7 @@ internal static class SequenceAdapterEmitter
             sb.AppendLine($"            ({wrap}(((global::System.Collections.Generic.IReadOnlyList<{sourceElement}>)_value)[index]));");
         }
 
-        AdapterEmitter.EmitIdentityMembers(sb, source);
+        AdapterEmitter.EmitIdentityMembers(sb, source, adapterName);
         sb.AppendLine("    }");
         return sb.ToString();
     }

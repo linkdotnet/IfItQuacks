@@ -34,7 +34,30 @@ public class AdapterIdentityTests
             }
             """;
 
-        Assert.Equal("True|True|False|True|2|False", GeneratorTestHelper.CompileAndRun(source));
+        Assert.Equal("True|False|False|True|2|False", GeneratorTestHelper.CompileAndRun(source));
+    }
+
+    [Fact]
+    public void Adapter_NeverEqualsItsOriginal()
+    {
+        var source = Shapes + """
+
+            public static class Entry
+            {
+                public static string Run()
+                {
+                    var person = new Person();
+                    var view = Duck.As<INamed>(person);
+                    var wrappedFirst = new Dictionary<object, string> { [view] = "wrapped" };
+                    wrappedFirst[person] = "original";
+                    var originalFirst = new Dictionary<object, string> { [person] = "original" };
+                    originalFirst[view] = "wrapped";
+                    return $"{view.Equals(person)}|{person.Equals(view)}|{wrappedFirst.Count}|{originalFirst.Count}";
+                }
+            }
+            """;
+
+        Assert.Equal("False|False|2|2", GeneratorTestHelper.CompileAndRun(source));
     }
 
     [Fact]
