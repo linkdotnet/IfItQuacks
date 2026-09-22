@@ -33,3 +33,11 @@ Rule ID | Category | Severity | Notes
 --------|----------|----------|-------
 IFITQUACKS010 | IfItQuacks | Error | Mapped shape target must be a partial interface
 IFITQUACKS011 | IfItQuacks | Error | Unsupported [DuckShape<>] usage
+
+## Release 1.5.0
+
+### New Rules
+
+Rule ID | Category | Severity | Notes
+--------|----------|----------|-------
+IFITQUACKS012 | IfItQuacks | Warning | Duck-typed parameter is cast to a concrete type
