@@ -13,8 +13,8 @@ internal static class GeneratorTestHelper
 {
     private static readonly IReadOnlyList<MetadataReference> References = BuildReferences();
 
-    private static readonly CSharpParseOptions ParseOptions = new CSharpParseOptions(LanguageVersion.Preview)
-        .WithFeatures([new KeyValuePair<string, string>("InterceptorsPreviewNamespaces", "IfItQuacks.Generated")]);
+    private static readonly CSharpParseOptions ParseOptions = new CSharpParseOptions(LanguageVersion.Latest)
+        .WithFeatures([new KeyValuePair<string, string>("InterceptorsNamespaces", "IfItQuacks.Generated")]);
 
     public static (Compilation Compilation, ImmutableArray<Diagnostic> Diagnostics) RunGenerator(string source, OutputKind outputKind = OutputKind.DynamicallyLinkedLibrary,
         IEnumerable<MetadataReference>? additionalReferences = null)
@@ -71,7 +71,7 @@ internal static class GeneratorTestHelper
         }
 
         stream.Seek(0, SeekOrigin.Begin);
-        return AssemblyLoadContext.Default.LoadFromStream(stream);
+        return new AssemblyLoadContext(compilation.AssemblyName, isCollectible: true).LoadFromStream(stream);
     }
 
     private static List<MetadataReference> BuildReferences()

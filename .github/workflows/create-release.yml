@@ -72,6 +72,10 @@ jobs:
     - name: Test
       run: dotnet test -c Release
 
+    - name: Create release package
+      run: |
+        dotnet pack -c Release src/IfItQuacks.Generator/IfItQuacks.Generator.csproj -p:PackageVersion=${{ steps.version.outputs.version }} --property:PackageOutputPath=${GITHUB_WORKSPACE}/packages
+
     - name: Update CHANGELOG file
       if: github.event.inputs.prerelease == 'false'
       uses: thomaseizinger/keep-a-changelog-new-release@3.1.0
@@ -114,10 +118,6 @@ jobs:
         name: v${{ steps.version.outputs.version }}
         body: ${{ steps.changelog.outputs.changes }}
         draft: false
-
-    - name: Create release package
-      run: |
-        dotnet pack -c Release src/IfItQuacks.Generator/IfItQuacks.Generator.csproj -p:PackageVersion=${{ steps.version.outputs.version }} --property:PackageOutputPath=${GITHUB_WORKSPACE}/packages /p:ContinuousIntegrationBuild=true
 
     - name: NuGet login
       uses: NuGet/login@v1

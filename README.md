@@ -11,7 +11,9 @@ Compile-time checked structural (duck) typing for C#: "If it walks like a duck a
 
 ## Getting Started
 
-> PM> Install-Package IfItQuacks
+> dotnet add package IfItQuacks
+
+Requires Visual Studio 2022 17.13 or the .NET SDK 9.0.200 or later.
 
 Declare an interface, mark a method as duck-typed and pass in anything that fits - no attributes on the interface or the types:
 
@@ -172,7 +174,7 @@ Duck.Unwrap(Duck.As<INamed>(person)) is Person;          // true
 - [Constrained duck typing](https://linkdotnet.github.io/IfItQuacks/articles/constrained_duck_typing.html) - the allocation-free form
 - [Known limitations](https://linkdotnet.github.io/IfItQuacks/articles/known_limitations.html)
 
-Runnable examples live in [`samples`](samples).
+Runnable examples live in [`samples`](https://github.com/linkdotnet/IfItQuacks/tree/main/samples).
 
 ## Support & Contributing
 

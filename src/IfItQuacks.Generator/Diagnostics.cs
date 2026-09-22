@@ -52,6 +52,14 @@ internal static class Diagnostics
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
+    public static readonly DiagnosticDescriptor ConversionTargetNotShape = new(
+        id: "IFITQUACKS007",
+        title: "Duck conversion target must be an interface",
+        messageFormat: "'Duck.{0}<{1}>' requires an interface",
+        category: "IfItQuacks",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
     public static readonly DiagnosticDescriptor UnsupportedCall = new(
         id: "IFITQUACKS008",
         title: "Unsupported duck-typed call",
@@ -80,14 +88,6 @@ internal static class Diagnostics
         id: "IFITQUACKS011",
         title: "Unsupported [DuckShape<>] usage",
         messageFormat: "'{0}' cannot be derived from '{1}': {2}",
-        category: "IfItQuacks",
-        DiagnosticSeverity.Error,
-        isEnabledByDefault: true);
-
-    public static readonly DiagnosticDescriptor ConversionTargetNotShape = new(
-        id: "IFITQUACKS007",
-        title: "Duck conversion target must be an interface",
-        messageFormat: "'Duck.{0}<{1}>' requires an interface",
         category: "IfItQuacks",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);

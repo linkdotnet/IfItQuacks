@@ -7,10 +7,7 @@ internal static class TypeWrapper
 {
     public static string WrapInContainingScope(INamedTypeSymbol type, string memberSource)
     {
-        var typeChain = new List<INamedTypeSymbol>();
-        for (var t = type; t is not null; t = t.ContainingType)
-            typeChain.Add(t);
-        typeChain.Reverse();
+        var typeChain = Utilities.EnclosingTypes(type).Reverse().ToList();
 
         var sb = new StringBuilder();
         var ns = type.ContainingNamespace;

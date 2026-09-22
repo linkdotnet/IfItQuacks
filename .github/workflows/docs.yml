@@ -20,10 +20,10 @@ jobs:
         global-json-file: global.json
 
     - name: Setup DocFX
-      run: dotnet tool install -g docfx
+      run: dotnet tool restore
 
     - name: DocFX Build
-      run: docfx docs/site/docfx.json
+      run: dotnet docfx docs/site/docfx.json
 
     - name: Publish
       uses: peaceiris/actions-gh-pages@v4

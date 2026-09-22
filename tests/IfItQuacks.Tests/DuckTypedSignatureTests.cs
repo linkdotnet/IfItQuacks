@@ -1,4 +1,3 @@
-using Microsoft.CodeAnalysis;
 using Xunit;
 
 namespace IfItQuacks.Tests;
@@ -37,7 +36,7 @@ public class DuckTypedSignatureTests
             }
             """;
 
-        Assert.Equal("Steven+Duck,Steven+Duck", Run(source));
+        Assert.Equal("Steven+Duck,Steven+Duck", GeneratorTestHelper.CompileAndRun(source));
     }
 
     [Fact]
@@ -57,7 +56,7 @@ public class DuckTypedSignatureTests
             }
             """;
 
-        Assert.Equal("Steven&Duck|Duck&Steven,Duck&Steven", Run(source));
+        Assert.Equal("Steven&Duck|Duck&Steven,Duck&Steven", GeneratorTestHelper.CompileAndRun(source));
     }
 
     [Fact]
@@ -76,7 +75,7 @@ public class DuckTypedSignatureTests
             }
             """;
 
-        Assert.Equal("Tag+Duck", Run(source));
+        Assert.Equal("Tag+Duck", GeneratorTestHelper.CompileAndRun(source));
     }
 
     [Fact]
@@ -106,7 +105,7 @@ public class DuckTypedSignatureTests
             }
             """;
 
-        Assert.Equal("Steven!?Duck2", Run(source));
+        Assert.Equal("Steven!?Duck2", GeneratorTestHelper.CompileAndRun(source));
     }
 
     [Fact]
@@ -125,7 +124,7 @@ public class DuckTypedSignatureTests
             }
             """;
 
-        Assert.Equal("Steven!", Run(source));
+        Assert.Equal("Steven!", GeneratorTestHelper.CompileAndRun(source));
     }
 
     [Fact]
@@ -150,7 +149,7 @@ public class DuckTypedSignatureTests
             }
             """;
 
-        Assert.Equal("Hello, Steven|Hello, Duck", Run(source));
+        Assert.Equal("Hello, Steven|Hello, Duck", GeneratorTestHelper.CompileAndRun(source));
     }
 
     [Fact]
@@ -175,7 +174,7 @@ public class DuckTypedSignatureTests
             }
             """;
 
-        Assert.Equal("Hi, Steven<Duck>", Run(source));
+        Assert.Equal("Hi, Steven<Duck>", GeneratorTestHelper.CompileAndRun(source));
     }
 
     [Fact]
@@ -210,7 +209,7 @@ public class DuckTypedSignatureTests
             }
             """;
 
-        Assert.Equal("Steven1|Duck2|2|Hi Steven", Run(source));
+        Assert.Equal("Steven1|Duck2|2|Hi Steven", GeneratorTestHelper.CompileAndRun(source));
     }
 
     [Fact]
@@ -239,7 +238,7 @@ public class DuckTypedSignatureTests
             }
             """;
 
-        Assert.Equal("Steven1|Duck1|Steven1|Duck1|0", Run(source));
+        Assert.Equal("Steven1|Duck1|Steven1|Duck1|0", GeneratorTestHelper.CompileAndRun(source));
     }
 
     [Fact]
@@ -277,7 +276,7 @@ public class DuckTypedSignatureTests
             }
             """;
 
-        Assert.Equal("base:Steven#Duck|DUCK7", Run(source));
+        Assert.Equal("base:Steven#Duck|DUCK7", GeneratorTestHelper.CompileAndRun(source));
     }
 
     [Fact]
@@ -308,7 +307,7 @@ public class DuckTypedSignatureTests
             }
             """;
 
-        Assert.Equal("42|42/7", Run(source));
+        Assert.Equal("42|42/7", GeneratorTestHelper.CompileAndRun(source));
     }
 
     [Fact]
@@ -327,7 +326,7 @@ public class DuckTypedSignatureTests
             }
             """;
 
-        Assert.Equal(2, Run(source));
+        Assert.Equal(2, GeneratorTestHelper.CompileAndRun(source));
     }
 
     [Fact]
@@ -396,7 +395,7 @@ public class DuckTypedSignatureTests
             }
             """;
 
-        Assert.Equal("Steven1|<Duck>|1", Run(source));
+        Assert.Equal("Steven1|<Duck>|1", GeneratorTestHelper.CompileAndRun(source));
     }
 
     [Theory]
@@ -425,14 +424,5 @@ public class DuckTypedSignatureTests
 
         var (_, diagnostics) = GeneratorTestHelper.RunGenerator(source);
         Assert.Contains(diagnostics, d => d.Id == "IFITQUACKS003");
-    }
-
-    private static object? Run(string source)
-    {
-        var (compilation, diagnostics) = GeneratorTestHelper.RunGenerator(source);
-        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-
-        var assembly = GeneratorTestHelper.EmitAndLoad(compilation);
-        return assembly.GetType("Entry")!.GetMethod("Run")!.Invoke(null, null);
     }
 }

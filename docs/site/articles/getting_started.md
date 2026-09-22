@@ -12,6 +12,10 @@ dotnet add package IfItQuacks
 
 IfItQuacks is a source generator built on top of [interceptors](https://github.com/dotnet/roslyn/blob/main/docs/features/interceptors.md). Interceptors are opt-in per namespace; the package enables its generated namespace automatically, so no project file changes are needed.
 
+### Requirements
+
+Visual Studio 2022 17.13 or the .NET SDK 9.0.200 or later (Roslyn 4.13), the first versions with stable interceptors. An older compiler skips the generator with warning CS9057, so neither `[DuckTyped]` nor `Duck` exists and the project fails to compile.
+
 ## Building blocks
 
 The generator adds the following `internal` types to the `IfItQuacks` namespace of your project. Because they are internal, several projects in the same solution can use IfItQuacks without type conflicts:

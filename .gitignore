@@ -402,10 +402,6 @@ FodyWeavers.xsd
 # MacOS
 .DS_Store
 
-# mkdocs
-/site/
-
 # IfItQuacks
-.DS_Store
 docs/site/_site/
 samples/**/Generated/

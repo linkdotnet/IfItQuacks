@@ -1,10 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <!-- BenchmarkDotNet requires public benchmark types and members. -->
-    <NoWarn>$(NoWarn);CA1515</NoWarn>
-  </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" />
   </ItemGroup>

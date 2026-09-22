@@ -6,6 +6,12 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 ## [Unreleased]
 
+### Changed
+
+- **Minimum toolchain is now Visual Studio 2022 17.13 or .NET SDK 9.0.200** (Roslyn 4.13), where interceptors became
+  stable. The generator already required the .NET 9 SDK's `InterceptorsNamespaces` switch, so .NET 8 SDKs were not
+  supported before either.
+
 ## [v1.4.1] - 2026-09-22
 
 ### Changed

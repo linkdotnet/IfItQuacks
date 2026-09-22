@@ -3,6 +3,11 @@
     <File Path="CHANGELOG.md" />
     <File Path="README.md" />
   </Folder>
+  <Folder Name="/benchmarks/">
+    <File Path="benchmarks/Directory.Build.props" />
+    <Project Path="benchmarks/IfItQuacks.Benchmarks/IfItQuacks.Benchmarks.csproj" />
+    <Project Path="benchmarks/IfItQuacks.Generator.Benchmarks/IfItQuacks.Generator.Benchmarks.csproj" />
+  </Folder>
   <Folder Name="/samples/">
     <File Path="samples/Directory.Build.props" />
     <Project Path="samples/IfItQuacks.Sample.AnonymousTypes/IfItQuacks.Sample.AnonymousTypes.csproj" />

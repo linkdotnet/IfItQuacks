@@ -115,13 +115,8 @@ internal static class StructuralCopyEmitter
     private static ITypeSymbol MemberType(ISymbol member) =>
         member is IPropertySymbol property ? property.Type : ((IFieldSymbol)member).Type;
 
-    private static bool IsReachable(INamedTypeSymbol type)
-    {
-        for (var t = type; t is not null; t = t.ContainingType)
-            if (t.DeclaredAccessibility is not (Accessibility.Public or Accessibility.Internal))
-                return false;
-        return true;
-    }
+    private static bool IsReachable(INamedTypeSymbol type) =>
+        Utilities.EnclosingTypes(type).All(t => t.DeclaredAccessibility is Accessibility.Public or Accessibility.Internal);
 
     private static string AnonymousWitness(INamedTypeSymbol anonymousType) =>
         "new { " + string.Join(", ", anonymousType.GetMembers().OfType<IPropertySymbol>().Select(p =>

@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 
 namespace IfItQuacks.Generator;
@@ -9,7 +10,7 @@ internal sealed record OverloadMember(string FileName, string Prefix, string Suf
 
 internal sealed record MappedShapeOutput(GeneratedFile? File, EquatableArray<Diagnostic> Diagnostics);
 
-internal sealed record DuckTypedMethodOutput(string Name, DuckMethodRef Reference, GeneratedFile? Fallback, EquatableArray<Diagnostic> Diagnostics);
+internal sealed record DuckTypedMethodOutput(DuckMethodRef Reference, GeneratedFile? Fallback, EquatableArray<Diagnostic> Diagnostics);
 
 // An extension method call on a receiver that doesn't implement the interface has no symbol, so it is looked up by name instead.
 internal sealed record DuckMethodRef(string Name, string ContainingType, bool IsExtension);
@@ -21,4 +22,4 @@ internal sealed record CallSiteOutput(
     EquatableArray<Diagnostic> Diagnostics);
 
 // A sequence argument needs the wrapper and the adapter for its elements.
-internal sealed record AdapterSet(string Name, System.Collections.Immutable.ImmutableArray<GeneratedFile> Files);
+internal sealed record AdapterSet(string Name, ImmutableArray<GeneratedFile> Files);

@@ -1,4 +1,3 @@
-using Microsoft.CodeAnalysis;
 using Xunit;
 
 namespace IfItQuacks.Tests;
@@ -36,7 +35,7 @@ public class ShapeMemberTests
             }
             """;
 
-        Assert.Equal(1, Run(source));
+        Assert.Equal(1, GeneratorTestHelper.CompileAndRun(source));
     }
 
     [Fact]
@@ -65,7 +64,7 @@ public class ShapeMemberTests
             }
             """;
 
-        Assert.Equal("duck", Run(source));
+        Assert.Equal("duck", GeneratorTestHelper.CompileAndRun(source));
     }
 
     [Fact]
@@ -109,7 +108,7 @@ public class ShapeMemberTests
             }
             """;
 
-        Assert.Equal("Hello, Plain|Quack, Custom", Run(source));
+        Assert.Equal("Hello, Plain|Quack, Custom", GeneratorTestHelper.CompileAndRun(source));
     }
 
     [Fact]
@@ -147,7 +146,7 @@ public class ShapeMemberTests
             }
             """;
 
-        Assert.Equal("3|33", Run(source));
+        Assert.Equal("3|33", GeneratorTestHelper.CompileAndRun(source));
     }
 
     [Fact]
@@ -185,7 +184,7 @@ public class ShapeMemberTests
             }
             """;
 
-        Assert.Equal("Steven", Run(source));
+        Assert.Equal("Steven", GeneratorTestHelper.CompileAndRun(source));
     }
 
     [Fact]
@@ -235,14 +234,5 @@ public class ShapeMemberTests
 
         var (_, diagnostics) = GeneratorTestHelper.RunGenerator(source);
         Assert.Contains(diagnostics, d => d.Id == "IFITQUACKS005");
-    }
-
-    private static object? Run(string source)
-    {
-        var (compilation, diagnostics) = GeneratorTestHelper.RunGenerator(source);
-        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-
-        var assembly = GeneratorTestHelper.EmitAndLoad(compilation);
-        return assembly.GetType("Entry")!.GetMethod("Run")!.Invoke(null, null);
     }
 }

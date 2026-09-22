@@ -1,17 +1,10 @@
 <Project>
   <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
-  <Import Project="$(MSBuildThisFileDirectory)..\src\IfItQuacks.Generator\build\IfItQuacks.props" />
+  <Import Project="$(MSBuildThisFileDirectory)..\build\Consumer.props" />
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
-    <IsPackable>false</IsPackable>
     <ServerGarbageCollection>false</ServerGarbageCollection>
+    <!-- BenchmarkDotNet requires public benchmark types and members. -->
+    <NoWarn>$(NoWarn);CA1515</NoWarn>
   </PropertyGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="$(MSBuildThisFileDirectory)..\src\IfItQuacks.Generator\IfItQuacks.Generator.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
-  </ItemGroup>
 </Project>
