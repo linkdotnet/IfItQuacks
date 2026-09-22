@@ -216,6 +216,25 @@ ReferenceEquals(view, other);  // false - two boxed adapters
 Duck.Unwrap(view) == person;   // true
 ```
 
+An adapter equals its original instance, but not the other way round - the original's `Equals` doesn't know about adapters:
+
+```csharp
+view.Equals(person);  // true
+person.Equals(view);  // false
+```
+
+Both hash alike, and hashed collections compare with the `Equals` of the element already stored. A collection holding both an adapter and its original therefore depends on insertion order:
+
+```csharp
+var wrappedFirst = new Dictionary<object, string> { [view] = "wrapped" };
+wrappedFirst[person] = "original";   // overwrites - Count 1 (Add would throw)
+
+var originalFirst = new Dictionary<object, string> { [person] = "original" };
+originalFirst[view] = "wrapped";     // new entry - Count 2
+```
+
+This needs a key type that can hold both: `object`, or an interface the original implements while being wrapped for a shape derived from it (`Duck.As<ITagged>(tag)` in a `Dictionary<INamed, T>` when `Tag` implements only `INamed`). Store either adapters or `Duck.Unwrap(...)` results, not a mix.
+
 ## Extension methods
 
 The generated fallback for a `[DuckTyped]` extension method has an unconstrained type parameter, so the method shows up on every type in scope and a receiver that doesn't fit reports [`IFITQUACKS001`](diagnostics.md#ifitquacks001) rather than `CS1061`. Keep such methods in a namespace you import deliberately.
