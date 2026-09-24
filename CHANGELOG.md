@@ -10,6 +10,9 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 - A `[DuckTyped]` method overloaded by a generic method with the signature of its generated fallback, e.g. `Greet<T>(T value)`
   next to `Greet(INamed n)`, failed the build with `CS0111` in generated code. It is now reported with `IFITQUACKS004`.
+- A `[DuckTyped]` method sharing its name with a method of a base type, e.g. an inherited `Greet(object)` or
+  `object.Equals`, built without a diagnostic, but the generated fallback hid the inherited method and every call threw
+  `DuckTypeMismatchException`, including the ones meant for the inherited method. It is now reported with `IFITQUACKS004`.
 
 ## [v1.5.1] - 2026-09-24
 

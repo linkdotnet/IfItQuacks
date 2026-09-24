@@ -235,6 +235,16 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             return false;
         }
 
+        // Overload resolution drops a base type's methods once a method of the derived type applies, whatever its priority,
+        // so the generated fallback would take the inherited method's calls and throw at runtime.
+        if (!method.IsGenericMethod && FindInheritedOverload(method, compilation) is { } inherited)
+        {
+            diagnostics?.Add(Diagnostic.Create(Diagnostics.UnsupportedSignature, location, method.Name,
+                $"it is overloaded by the inherited '{inherited.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}', " +
+                "which its generated fallback would hide"));
+            return false;
+        }
+
         return true;
     }
 
@@ -1338,6 +1348,19 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         return method.ContainingType.GetMembers(method.Name).OfType<IMethodSymbol>().FirstOrDefault(m =>
             m is { MethodKind: MethodKind.Ordinary, IsGenericMethod: true } && !IsDuckTyped(m) &&
             subsets.Any(subset => HasFallbackSignature(m, method, subset)));
+    }
+
+    // An override counts as declared by the base type, and methods of System.Object are inherited like any other.
+    private static IMethodSymbol? FindInheritedOverload(IMethodSymbol method, Compilation compilation)
+    {
+        for (var type = method.ContainingType.BaseType; type is not null; type = type.BaseType)
+        {
+            if (type.GetMembers(method.Name).OfType<IMethodSymbol>().FirstOrDefault(m =>
+                    m.MethodKind == MethodKind.Ordinary && compilation.IsSymbolAccessibleWithin(m, method.ContainingType)) is { } inherited)
+                return inherited;
+        }
+
+        return null;
     }
 
     // Mirrors the declaration CreateFallbackVariant emits: the subset's parameters become the method's type parameters in order.
