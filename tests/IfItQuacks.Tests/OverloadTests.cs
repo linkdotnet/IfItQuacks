@@ -272,4 +272,127 @@ public class OverloadTests
         Assert.Single(diagnostics, d => d.Id == "IFITQUACKS004");
         Assert.DoesNotContain(diagnostics, d => d.Id != "IFITQUACKS004");
     }
+
+    [Theory]
+    [InlineData("public static string Greet(object o) => \"base\";", "Base.Greet(object")]
+    [InlineData("public static string Greet<T>(T value) => \"base\";", "Base.Greet<T>(T")]
+    [InlineData("protected string Greet(int count) => \"base\";", "Base.Greet(int")]
+    [InlineData("public virtual string Greet(object o) => \"base\";", "Base.Greet(object")]
+    public void InheritedOverload_ReportsIfItQuacks004(string baseMember, string expected)
+    {
+        var source = $$"""
+            using IfItQuacks;
+
+            public interface INamed { string Name { get; } }
+
+            public class Base { {{baseMember}} }
+
+            public partial class Ops : Base
+            {
+                [DuckTyped]
+                public static string Greet(INamed n) => n.Name;
+            }
+            """;
+
+        var (compilation, diagnostics) = GeneratorTestHelper.RunGenerator(source);
+
+        var diagnostic = Assert.Single(diagnostics, d => d.Id == "IFITQUACKS004");
+        Assert.Contains(expected, diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        Assert.DoesNotContain(compilation.SyntaxTrees, t => t.FilePath.Contains("Fallback", StringComparison.Ordinal));
+        Assert.DoesNotContain(diagnostics, d => d.Id != "IFITQUACKS004");
+    }
+
+    [Fact]
+    public void InaccessibleInheritedMethod_KeepsFallback()
+    {
+        const string source = """
+            using IfItQuacks;
+
+            public interface INamed { string Name { get; } }
+            public class Person { public string Name => "Steven"; }
+
+            public class Base { private static string Greet(object o) => "base"; }
+
+            public partial class Ops : Base
+            {
+                [DuckTyped]
+                public static string Greet(INamed n) => $"duck:{n.Name}";
+            }
+
+            public static class Entry
+            {
+                public static string Run() => Ops.Greet(new Person());
+            }
+            """;
+
+        Assert.Equal("duck:Steven", GeneratorTestHelper.CompileAndRun(source));
+    }
+
+    [Fact]
+    public void OverriddenBaseOverload_ReportsIfItQuacks004()
+    {
+        const string source = """
+            using IfItQuacks;
+
+            public interface INamed { string Name { get; } }
+
+            public class Base { public virtual string Greet(object o) => "base"; }
+
+            public partial class Ops : Base
+            {
+                public override string Greet(object o) => "override";
+
+                [DuckTyped]
+                public string Greet(INamed n) => n.Name;
+            }
+            """;
+
+        var (_, diagnostics) = GeneratorTestHelper.RunGenerator(source);
+
+        Assert.Single(diagnostics, d => d.Id == "IFITQUACKS004");
+        Assert.DoesNotContain(diagnostics, d => d.Id != "IFITQUACKS004");
+    }
+
+    [Fact]
+    public void MethodNamedLikeObjectMember_ReportsIfItQuacks004()
+    {
+        const string source = """
+            using IfItQuacks;
+
+            public interface INamed { string Name { get; } }
+
+            public partial class Ops
+            {
+                [DuckTyped]
+                public bool Equals(INamed n) => n.Name == "x";
+            }
+            """;
+
+        var (_, diagnostics) = GeneratorTestHelper.RunGenerator(source);
+
+        var diagnostic = Assert.Single(diagnostics, d => d.Id == "IFITQUACKS004");
+        Assert.Contains("object.Equals(object", diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GenericDuckTypedMethod_WithInheritedOverload_IsNotReported()
+    {
+        const string source = """
+            using IfItQuacks;
+
+            public interface IBox<T> { T Value { get; } }
+            public class Base { public static int Get(object o) => -1; }
+
+            public partial class Ops : Base
+            {
+                [DuckTyped]
+                public static T Get<T>(IBox<T> box) => box.Value;
+            }
+
+            """;
+
+        var (_, diagnostics) = GeneratorTestHelper.RunGenerator(source);
+
+        Assert.Empty(diagnostics);
+    }
 }
