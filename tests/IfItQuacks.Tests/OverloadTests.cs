@@ -171,4 +171,105 @@ public class OverloadTests
         Assert.DoesNotContain(compilation.SyntaxTrees, t => t.FilePath.Contains("Fallback", StringComparison.Ordinal));
         Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error && d.Id != "IFITQUACKS004");
     }
+
+    [Fact]
+    public void GenericOverloadWithFallbackSignature_ReportsIfItQuacks004()
+    {
+        const string source = """
+            using IfItQuacks;
+
+            public interface INamed { string Name { get; } }
+
+            public static partial class Ops
+            {
+                [DuckTyped]
+                public static string Greet(INamed n) => n.Name;
+
+                public static string Greet<T>(T value) => "generic";
+            }
+            """;
+
+        var (compilation, diagnostics) = GeneratorTestHelper.RunGenerator(source);
+
+        var diagnostic = Assert.Single(diagnostics, d => d.Id == "IFITQUACKS004");
+        Assert.Contains("Greet<T>(T", diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        Assert.DoesNotContain(compilation.SyntaxTrees, t => t.FilePath.Contains("Fallback", StringComparison.Ordinal));
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error && d.Id != "IFITQUACKS004");
+    }
+
+    [Fact]
+    public void GenericOverloadMatchingOnePartialFallbackVariant_ReportsIfItQuacks004()
+    {
+        const string source = """
+            using IfItQuacks;
+
+            public interface INamed { string Name { get; } }
+
+            public static partial class Ops
+            {
+                [DuckTyped]
+                public static string Pair(INamed first, INamed second) => first.Name + second.Name;
+
+                public static string Pair<T>(T first, INamed second) => "generic";
+            }
+            """;
+
+        var (_, diagnostics) = GeneratorTestHelper.RunGenerator(source);
+
+        Assert.Single(diagnostics, d => d.Id == "IFITQUACKS004");
+        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error && d.Id != "IFITQUACKS004");
+    }
+
+    [Fact]
+    public void GenericOverloadWithDifferentSignature_KeepsFallback()
+    {
+        const string source = """
+            using IfItQuacks;
+
+            public interface INamed { string Name { get; } }
+            public class Person { public string Name => "Steven"; }
+
+            public static partial class Ops
+            {
+                [DuckTyped]
+                public static string Greet(INamed n) => $"duck:{n.Name}";
+
+                public static string Greet<T>(T value, int times) => $"generic:{times}";
+
+                public static string Greet<T>(System.Collections.Generic.List<T> values) => "list";
+            }
+
+            public static class Entry
+            {
+                public static string Run() => string.Join(",", Ops.Greet(new Person()), Ops.Greet(42, 2), Ops.Greet(new System.Collections.Generic.List<int>()));
+            }
+            """;
+
+        Assert.Equal("duck:Steven,generic:2,list", GeneratorTestHelper.CompileAndRun(source));
+    }
+
+    [Theory]
+    [InlineData("public static string Log(INamed n, ref int x) => n.Name;", "public static string Log<T>(T n, out int x) { x = 0; return \"generic\"; }")]
+    [InlineData("public static string Log(int count, INamed n) => n.Name;", "public static string Log<T>(int count, T n) => \"generic\";")]
+    public void GenericOverloadWithFallbackSignature_AfterOtherParameters_ReportsIfItQuacks004(string duckMethod, string overload)
+    {
+        var source = $$"""
+            using IfItQuacks;
+
+            public interface INamed { string Name { get; } }
+
+            public static partial class Ops
+            {
+                [DuckTyped]
+                {{duckMethod}}
+
+                {{overload}}
+            }
+            """;
+
+        var (_, diagnostics) = GeneratorTestHelper.RunGenerator(source);
+
+        Assert.Single(diagnostics, d => d.Id == "IFITQUACKS004");
+        Assert.DoesNotContain(diagnostics, d => d.Id != "IFITQUACKS004");
+    }
 }
