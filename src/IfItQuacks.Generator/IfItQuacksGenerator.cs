@@ -226,6 +226,15 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             return false;
         }
 
+        // The generated fallback would clash with a generic overload of the same signature.
+        if (!method.IsGenericMethod && FindFallbackConflict(method) is { } conflict)
+        {
+            diagnostics?.Add(Diagnostic.Create(Diagnostics.UnsupportedSignature, location, method.Name,
+                $"it is overloaded by '{conflict.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}', " +
+                "which its generated fallback would collide with"));
+            return false;
+        }
+
         return true;
     }
 
@@ -1323,15 +1332,38 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         }
     }
 
-    private static GeneratedFile CreateFallbackOverload(IMethodSymbol method, Compilation compilation)
+    private static IMethodSymbol? FindFallbackConflict(IMethodSymbol method)
     {
-        var yieldsToOverloads = SupportsOverloadPriority(compilation);
-        var duckParameters = GetDuckParameters(method);
-        // One variant per subset of generic parameters, so null, default and omitted arguments can keep the interface type.
-        var subsets = duckParameters.Length > MaxFallbackVariantParameters
+        var subsets = GetFallbackSubsets(GetDuckParameters(method)).ToImmutableArray();
+        return method.ContainingType.GetMembers(method.Name).OfType<IMethodSymbol>().FirstOrDefault(m =>
+            m is { MethodKind: MethodKind.Ordinary, IsGenericMethod: true } && !IsDuckTyped(m) &&
+            subsets.Any(subset => HasFallbackSignature(m, method, subset)));
+    }
+
+    // Mirrors the declaration CreateFallbackVariant emits: the subset's parameters become the method's type parameters in order.
+    // Parameters differing only in ref, out or in can't overload each other either, so only by-reference versus by-value counts.
+    private static bool HasFallbackSignature(IMethodSymbol candidate, IMethodSymbol method, ImmutableArray<IParameterSymbol> subset) =>
+        candidate.TypeParameters.Length == subset.Length && candidate.Parameters.Length == method.Parameters.Length &&
+        method.Parameters.All(p =>
+        {
+            var other = candidate.Parameters[p.Ordinal];
+            var index = subset.IndexOf(p, SymbolEqualityComparer.Default);
+            return (other.RefKind == RefKind.None) == (p.RefKind == RefKind.None) && (index >= 0
+                ? other.Type is ITypeParameterSymbol { TypeParameterKind: TypeParameterKind.Method } typeParameter && typeParameter.Ordinal == index
+                : SymbolEqualityComparer.Default.Equals(other.Type, p.Type));
+        });
+
+    // One variant per subset of generic parameters, so null, default and omitted arguments can keep the interface type.
+    private static IEnumerable<ImmutableArray<IParameterSymbol>> GetFallbackSubsets(ImmutableArray<IParameterSymbol> duckParameters) =>
+        duckParameters.Length > MaxFallbackVariantParameters
             ? [duckParameters]
             : Enumerable.Range(1, (1 << duckParameters.Length) - 1)
                 .Select(mask => duckParameters.Where((_, i) => (mask & (1 << i)) != 0).ToImmutableArray());
+
+    private static GeneratedFile CreateFallbackOverload(IMethodSymbol method, Compilation compilation)
+    {
+        var yieldsToOverloads = SupportsOverloadPriority(compilation);
+        var subsets = GetFallbackSubsets(GetDuckParameters(method));
 
         var methodSource = string.Join("\n\n", subsets.Select(subset => CreateFallbackVariant(method, subset, yieldsToOverloads)));
         if (NeedsForwarder(method))
