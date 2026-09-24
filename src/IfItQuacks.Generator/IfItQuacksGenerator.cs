@@ -22,6 +22,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
     private const string DuckMergeMethodName = "Merge";
     private const string DuckToMethodName = "To";
     private const string GeneratedNamespace = "IfItQuacks.Generated";
+    private const string OverloadPriorityAttributeName = "System.Runtime.CompilerServices.OverloadResolutionPriorityAttribute";
     private const string InterceptorIndexPlaceholder = "__INDEX__";
     private const string EditorBrowsableNever = "[global::System.ComponentModel.EditorBrowsable(global::System.ComponentModel.EditorBrowsableState.Never)]";
     private const int MaxFallbackVariantParameters = 4;
@@ -92,11 +93,12 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
     {
         var method = (IMethodSymbol)ctx.TargetSymbol;
         var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
-        var isValid = ValidateDuckTypedMethod(method, ctx.TargetNode.GetLocation(), diagnostics);
+        var compilation = ctx.SemanticModel.Compilation;
+        var isValid = ValidateDuckTypedMethod(method, compilation, ctx.TargetNode.GetLocation(), diagnostics);
         if (isValid && ctx.SemanticModel.GetOperation(ctx.TargetNode, ct) is { } body)
-            diagnostics.AddRange(AdapterCastFinder.Find(body, GetAdaptedParameters(method), ctx.SemanticModel.Compilation));
+            diagnostics.AddRange(AdapterCastFinder.Find(body, GetAdaptedParameters(method), compilation));
 
-        var fallback = isValid && !method.IsGenericMethod ? CreateFallbackOverload(method) : null;
+        var fallback = isValid && !method.IsGenericMethod ? CreateFallbackOverload(method, compilation) : null;
         var reference = new DuckMethodRef(method.Name, MetadataName(method.ContainingType), isValid && method.IsExtensionMethod);
         return new DuckTypedMethodOutput(reference, fallback, new EquatableArray<Diagnostic>(diagnostics.ToImmutable()));
     }
@@ -162,7 +164,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             context.AddSource(file.Name, SourceText.From(file.Source, Encoding.UTF8));
     }
 
-    private static bool ValidateDuckTypedMethod(IMethodSymbol method, Location location, ImmutableArray<Diagnostic>.Builder? diagnostics)
+    private static bool ValidateDuckTypedMethod(IMethodSymbol method, Compilation compilation, Location location, ImmutableArray<Diagnostic>.Builder? diagnostics)
     {
         if (method.ContainingType.DeclaringSyntaxReferences
                 .Select(r => r.GetSyntax())
@@ -213,8 +215,25 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             return false;
         }
 
+        // Without a lower priority the generic fallback would take the calls meant for the other overload and throw at runtime.
+        if (!method.IsGenericMethod && !SupportsOverloadPriority(compilation) &&
+            method.ContainingType.GetMembers(method.Name).OfType<IMethodSymbol>()
+                .FirstOrDefault(m => m.MethodKind == MethodKind.Ordinary && !IsDuckTyped(m)) is { } overload)
+        {
+            diagnostics?.Add(Diagnostic.Create(Diagnostics.UnsupportedSignature, location, method.Name,
+                $"it is overloaded by '{overload.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}', " +
+                "which requires C# 13"));
+            return false;
+        }
+
         return true;
     }
+
+    private static bool SupportsOverloadPriority(Compilation compilation) =>
+        compilation is CSharpCompilation { LanguageVersion: >= LanguageVersion.CSharp13 };
+
+    private static bool LacksOverloadPriorityAttribute(Compilation compilation) =>
+        compilation.GetTypeByMetadataName(OverloadPriorityAttributeName) is null;
 
     // A duck-typed constraint, e.g. 'where T : IAddable<T>', lets static abstract members and operators be matched structurally.
     private static ImmutableArray<ITypeParameterSymbol> GetConstraintTypeParameters(IMethodSymbol method) =>
@@ -289,8 +308,15 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             isReduced = true;
         }
 
+        if (candidate is null && symbolInfo.Symbol is IMethodSymbol bound && FindOverloadedDuckMethod(bound, compilation) is { } overloaded)
+            return AnalyzeOverloadCall(semanticModel, invocation, bound, overloaded, ct);
+
         var duckMethod = (candidate?.ReducedFrom ?? candidate)?.OriginalDefinition;
-        if (duckMethod is null || !ValidateDuckTypedMethod(duckMethod, Location.None, diagnostics: null))
+        if (duckMethod is null || !ValidateDuckTypedMethod(duckMethod, compilation, Location.None, diagnostics: null))
+            return null;
+
+        var bindsWithoutFallback = !duckMethod.IsGenericMethod && symbolInfo.Symbol is not null && SupportsOverloadPriority(compilation);
+        if (bindsWithoutFallback)
             return null;
 
         // 'person.Describe(x)' passes the receiver as the extension method's first parameter, which the argument list doesn't contain.
@@ -426,6 +452,97 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             new EquatableArray<GeneratedFile>(adapters.ToImmutable()), null, default);
     }
 
+    private static IMethodSymbol? FindOverloadedDuckMethod(IMethodSymbol bound, Compilation compilation) =>
+        bound is { MethodKind: MethodKind.Ordinary, IsGenericMethod: false } && !IsDuckTyped(bound)
+            ? bound.ContainingType.GetMembers(bound.Name).OfType<IMethodSymbol>().FirstOrDefault(m =>
+                m is { IsGenericMethod: false, DeclaringSyntaxReferences.Length: > 0 } && IsDuckTyped(m) &&
+                ValidateDuckTypedMethod(m, compilation, Location.None, diagnostics: null))
+            : null;
+
+    private static bool IsMoreSpecific(ITypeSymbol type, ITypeSymbol than, Compilation compilation) =>
+        compilation.ClassifyCommonConversion(type, than) is { IsImplicit: true, IsUserDefined: false } &&
+        !compilation.ClassifyCommonConversion(than, type).IsImplicit;
+
+    // 'Greet(new Person())' binds to an overload like 'Greet(object)'. It is redirected when C# would pick the [DuckTyped] method if Person implemented the interface.
+    private static CallSiteOutput? AnalyzeOverloadCall(SemanticModel semanticModel, InvocationExpressionSyntax invocation,
+        IMethodSymbol overload, IMethodSymbol duckMethod, CancellationToken ct)
+    {
+        if (IsBaseCall(invocation) || overload.IsStatic != duckMethod.IsStatic || (overload.IsReadOnly && !duckMethod.IsReadOnly) ||
+            overload.RefKind != RefKind.None || duckMethod.RefKind != RefKind.None ||
+            !SymbolEqualityComparer.Default.Equals(overload.ReturnType, duckMethod.ReturnType) ||
+            overload.Parameters.Any(p => p.IsParams) || duckMethod.Parameters.Any(p => p.IsParams) ||
+            MapArguments(invocation.ArgumentList, duckMethod, isReduced: false) is not { } arguments ||
+            MapArguments(invocation.ArgumentList, overload, isReduced: false) is not { } overloadArguments)
+            return null;
+
+        var compilation = semanticModel.Compilation;
+        var targets = overloadArguments.ToDictionary(a => a.Value, a => overload.Parameters[a.Key]);
+        var duckParameters = GetDuckParameters(duckMethod);
+        var adapted = new List<(IParameterSymbol Parameter, ExpressionSyntax Expression, INamedTypeSymbol Shape, ITypeSymbol ConcreteType)>();
+        foreach (var argument in arguments)
+        {
+            var parameter = duckMethod.Parameters[argument.Key];
+            var expression = argument.Value;
+            if (!duckParameters.Contains(parameter, SymbolEqualityComparer.Default))
+            {
+                if (!SymbolEqualityComparer.Default.Equals(parameter.Type, targets[expression].Type) || parameter.RefKind != targets[expression].RefKind)
+                    return null;
+                continue;
+            }
+
+            var argumentType = GetArgumentType(semanticModel, expression, compilation, ct);
+            var shape = (INamedTypeSymbol)WithoutNullability(parameter.Type);
+            if (argumentType is null || compilation.ClassifyCommonConversion(argumentType, shape) is { IsImplicit: true, IsUserDefined: false })
+                continue;
+
+            if (argumentType.TypeKind == TypeKind.Error || argumentType.IsAnonymousType || ContainsAnyTypeParameter(argumentType) ||
+                !IsMoreSpecific(shape, targets[expression].Type, compilation) ||
+                VerifyArgument(expression, shape, argumentType, compilation, out _) is not null)
+                return null;
+
+            adapted.Add((parameter, expression, shape, argumentType));
+        }
+
+        if (adapted.Count == 0)
+            return null;
+
+        var shapes = adapted.ToDictionary(a => a.Expression, a => a.Shape);
+        var speculative = invocation.ReplaceNodes(shapes.Keys, (original, _) =>
+            SyntaxFactory.ParseExpression($"default({shapes[original].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)})"));
+        if (semanticModel.GetSpeculativeSymbolInfo(invocation.SpanStart, speculative, SpeculativeBindingOption.BindAsExpression).Symbol is not IMethodSymbol picked ||
+            !SymbolEqualityComparer.Default.Equals(picked.OriginalDefinition, duckMethod))
+            return null;
+
+        var location = semanticModel.GetInterceptableLocation(invocation, ct);
+        if (location is null)
+            return null;
+
+        var adapters = ImmutableArray.CreateBuilder<GeneratedFile>();
+        var adapterNames = new Dictionary<int, (ITypeSymbol ConcreteType, string AdapterName)>();
+        foreach (var (parameter, _, shape, concreteType) in adapted)
+        {
+            var adapter = CreateAdapter(shape, concreteType, compilation);
+            adapters.AddRange(adapter.Files);
+            adapterNames[parameter.Ordinal] = (concreteType, adapter.Name);
+        }
+
+        string Value(IParameterSymbol parameter, IParameterSymbol target)
+        {
+            var name = Utilities.Identifier(target.Name);
+            var shape = $"global::{WithoutNullability(parameter.Type).ToDisplayString()}";
+            if (adapterNames.TryGetValue(parameter.Ordinal, out var duck))
+                return $"({shape})(new global::{GeneratedNamespace}.{duck.AdapterName}(({duck.ConcreteType.ToDisplayString()})(object){name}!))";
+
+            return duckParameters.Contains(parameter, SymbolEqualityComparer.Default) ? $"({shape})(object){name}!" : Utilities.Argument(target);
+        }
+
+        var callArguments = arguments.OrderBy(a => a.Key).Select(a =>
+            $"{Utilities.Identifier(duckMethod.Parameters[a.Key].Name)}: {Value(duckMethod.Parameters[a.Key], targets[a.Value])}");
+
+        return new CallSiteOutput(CreateRedirectInterceptor(location, overload, duckMethod, callArguments),
+            new EquatableArray<GeneratedFile>(adapters.ToImmutable()), null, default);
+    }
+
     // A name used as a value, e.g. 'Ops.Describe' in 'Func<Person, string> f = Ops.Describe;' or 'items.Select(Ops.Describe)'.
     private static ExpressionSyntax? AsMethodGroup(SyntaxNode node)
     {
@@ -460,7 +577,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         var symbolInfo = semanticModel.GetSymbolInfo(expression, ct);
         var duckMethod = (symbolInfo.Symbol as IMethodSymbol ?? symbolInfo.CandidateSymbols.OfType<IMethodSymbol>().FirstOrDefault())?.OriginalDefinition;
         if (duckMethod is null || duckMethod.IsGenericMethod || duckMethod.DeclaringSyntaxReferences.Length == 0 ||
-            !IsDuckTyped(duckMethod) || !ValidateDuckTypedMethod(duckMethod, Location.None, diagnostics: null))
+            !IsDuckTyped(duckMethod) || !ValidateDuckTypedMethod(duckMethod, compilation, Location.None, diagnostics: null))
             return null;
 
         if (semanticModel.GetTypeInfo(expression, ct).ConvertedType is not INamedTypeSymbol { DelegateInvokeMethod: { } invoke } ||
@@ -1206,8 +1323,9 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         }
     }
 
-    private static GeneratedFile CreateFallbackOverload(IMethodSymbol method)
+    private static GeneratedFile CreateFallbackOverload(IMethodSymbol method, Compilation compilation)
     {
+        var yieldsToOverloads = SupportsOverloadPriority(compilation);
         var duckParameters = GetDuckParameters(method);
         // One variant per subset of generic parameters, so null, default and omitted arguments can keep the interface type.
         var subsets = duckParameters.Length > MaxFallbackVariantParameters
@@ -1215,20 +1333,21 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             : Enumerable.Range(1, (1 << duckParameters.Length) - 1)
                 .Select(mask => duckParameters.Where((_, i) => (mask & (1 << i)) != 0).ToImmutableArray());
 
-        var methodSource = string.Join("\n\n", subsets.Select(subset => CreateFallbackVariant(method, subset)));
+        var methodSource = string.Join("\n\n", subsets.Select(subset => CreateFallbackVariant(method, subset, yieldsToOverloads)));
         if (NeedsForwarder(method))
             methodSource += "\n\n" + CreateForwarder(method);
 
         return new GeneratedFile(
             $"IfItQuacks.Fallback.{SanitizeHintName(method.ContainingType.ToDisplayString())}.{method.Name}.g.cs",
-            Header + TypeWrapper.WrapInContainingScope(method.ContainingType, methodSource));
+            Header + (yieldsToOverloads && LacksOverloadPriorityAttribute(compilation) ? EmbeddedSources.OverloadPriorityAttributePolyfill + "\n" : "") +
+            TypeWrapper.WrapInContainingScope(method.ContainingType, methodSource));
     }
 
     // An extension method's first parameter keeps its 'this', so the generated overload can still be called on a receiver.
     private static string DeclareParameter(IMethodSymbol method, IParameterSymbol parameter, string type) =>
         (method.IsExtensionMethod && parameter.Ordinal == 0 ? "this " : "") + Utilities.Parameter(parameter, type);
 
-    private static string CreateFallbackVariant(IMethodSymbol method, ImmutableArray<IParameterSymbol> genericParameters)
+    private static string CreateFallbackVariant(IMethodSymbol method, ImmutableArray<IParameterSymbol> genericParameters, bool yieldsToOverloads)
     {
         var typeParameterNames = genericParameters.ToDictionary(p => p.Ordinal, FallbackTypeParameterName);
 
@@ -1239,9 +1358,10 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         var arguments = string.Join(", ", method.Parameters.Select(p => typeParameterNames.TryGetValue(p.Ordinal, out var name)
             ? RuntimeCast(p, name)
             : Utilities.Argument(p)));
+        var yieldToOverloadsAttribute = yieldsToOverloads ? $" [global::{OverloadPriorityAttributeName}(-1)]" : "";
 
         return $$"""
-            {{EditorBrowsableNever}}
+            {{EditorBrowsableNever}}{{yieldToOverloadsAttribute}}
             {{Utilities.AccessibilityKeyword(method.DeclaredAccessibility)}} {{(method.IsStatic ? "static " : "")}}{{method.ReturnType.ToDisplayString()}} {{method.Name}}<{{string.Join(", ", typeParameterNames.Values)}}>({{parameters}})
             {
                 {{(method.ReturnsVoid ? "" : "return ")}}{{method.Name}}({{arguments}});
@@ -1338,6 +1458,26 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         });
         var typeParameters = isGeneric ? $"<{string.Join(", ", duckArguments.Keys.OrderBy(o => o).Select(o => FallbackTypeParameterName(method.Parameters[o])))}>" : "";
 
+        return InterceptorSource(location, method, typeParameters, parameters, arguments);
+    }
+
+    // Keeps the intercepted overload's signature, but calls the [DuckTyped] method with named arguments, so its own defaults apply.
+    private static string CreateRedirectInterceptor(InterceptableLocation location, IMethodSymbol overload, IMethodSymbol duckMethod,
+        IEnumerable<string> arguments)
+    {
+        var parameters = overload.Parameters.Select(p => Utilities.Parameter(p, p.Type.ToDisplayString()));
+        if (!overload.IsStatic)
+        {
+            var receiverRefKind = overload.IsReadOnly ? "in " : "ref ";
+            parameters = parameters.Prepend($"this {(overload.ContainingType.IsValueType ? receiverRefKind : "")}global::{overload.ContainingType.ToDisplayString()} @this");
+        }
+
+        return InterceptorSource(location, duckMethod, "", parameters, arguments);
+    }
+
+    private static string InterceptorSource(InterceptableLocation location, IMethodSymbol method, string typeParameters,
+        IEnumerable<string> parameters, IEnumerable<string> arguments)
+    {
         var receiver = method.IsStatic ? $"global::{method.ContainingType.ToDisplayString()}" : "@this";
         var call = $"{receiver}.{(NeedsForwarder(method) ? ForwarderName(method) : method.Name)}({string.Join(", ", arguments)});";
 

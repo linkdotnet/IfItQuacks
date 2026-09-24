@@ -20,6 +20,12 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
   type wrapping equal values are still equal and hash alike; `ToString` is still forwarded. Compare with the original
   through `Duck.Unwrap`.
 
+### Fixed
+
+- A `[DuckTyped]` method overloaded by a regular method, e.g. `Greet(object)`, threw `DuckTypeMismatchException`. Calls
+  now go to that overload unless the argument matches the interface structurally. Requires C# 13, `IFITQUACKS004`
+  otherwise. Reported by [@robertodalmonte](https://github.com/robertodalmonte) in #1
+
 ## [v1.4.2] - 2026-09-22
 
 ### Changed

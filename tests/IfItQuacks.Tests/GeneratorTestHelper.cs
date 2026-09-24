@@ -17,12 +17,13 @@ internal static class GeneratorTestHelper
         .WithFeatures([new KeyValuePair<string, string>("InterceptorsNamespaces", "IfItQuacks.Generated")]);
 
     public static (Compilation Compilation, ImmutableArray<Diagnostic> Diagnostics) RunGenerator(string source, OutputKind outputKind = OutputKind.DynamicallyLinkedLibrary,
-        IEnumerable<MetadataReference>? additionalReferences = null)
+        IEnumerable<MetadataReference>? additionalReferences = null, LanguageVersion languageVersion = LanguageVersion.Latest)
     {
-        var compilation = CreateCompilation(outputKind, additionalReferences, source);
+        var parseOptions = ParseOptions.WithLanguageVersion(languageVersion);
+        var compilation = CreateCompilation(outputKind, additionalReferences, parseOptions, source);
 
         var generator = new IfItQuacksGenerator();
-        GeneratorDriver driver = CSharpGeneratorDriver.Create([generator.AsSourceGenerator()], parseOptions: ParseOptions);
+        GeneratorDriver driver = CSharpGeneratorDriver.Create([generator.AsSourceGenerator()], parseOptions: parseOptions);
 
         driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var generatorDiagnostics);
 
@@ -45,9 +46,13 @@ internal static class GeneratorTestHelper
         RunGenerator(source).Diagnostics.Select(d => d.Id).ToImmutableArray();
 
     public static CSharpCompilation CreateCompilation(OutputKind outputKind, IEnumerable<MetadataReference>? additionalReferences, params string[] sources) =>
+        CreateCompilation(outputKind, additionalReferences, ParseOptions, sources);
+
+    private static CSharpCompilation CreateCompilation(OutputKind outputKind, IEnumerable<MetadataReference>? additionalReferences,
+        CSharpParseOptions parseOptions, params string[] sources) =>
         CSharpCompilation.Create(
             assemblyName: "IfItQuacks.Tests.Generated." + Guid.NewGuid().ToString("N"),
-            syntaxTrees: sources.Select(source => CSharpSyntaxTree.ParseText(source, ParseOptions)),
+            syntaxTrees: sources.Select(source => CSharpSyntaxTree.ParseText(source, parseOptions)),
             references: References.Concat(additionalReferences ?? []),
             options: new CSharpCompilationOptions(outputKind, allowUnsafe: true));
 

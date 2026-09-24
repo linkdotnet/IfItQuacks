@@ -67,6 +67,8 @@ public partial interface IOps { [DuckTyped] static string G(INamed n) => n.Name;
 file partial class Ops4 { [DuckTyped] public static string H(INamed n) => n.Name; }       // IFITQUACKS004: file-local
 ```
 
+A `[DuckTyped]` method can share its name with regular overloads, e.g. `Greet(object)`. A call binding to such an overload is only redirected to the `[DuckTyped]` method if C# would pick it had the argument implemented the interface. That redirect is skipped, so the call stays on your overload, for anonymous types, `params` parameters, generic overloads, extension-method calls on a receiver and overloads with a different return type. This needs C# 13, also on .NET 8 ([`IFITQUACKS004`](diagnostics.md#ifitquacks004) otherwise).
+
 `null`, `default` and omitted interface arguments work for methods with **up to four** interface parameters. Beyond that, every interface parameter needs an argument with a type.
 
 ## Interface members that can't be adapted
