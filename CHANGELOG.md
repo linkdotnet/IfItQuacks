@@ -6,6 +6,8 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 ## [Unreleased]
 
+## [v1.5.4] - 2026-09-25
+
 ### Changed
 
 - `IFITQUACKS012` is reported by an analyzer instead of the source generator, so the generator no longer binds every
@@ -192,7 +194,8 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 - Anonymous types can be passed to `[DuckTyped]` methods and `Duck.As`.
 - Adapters forward `Equals`, `GetHashCode` and `ToString` to the wrapped instance; `Duck.Unwrap` returns it.
 
-[unreleased]: https://github.com/linkdotnet/IfItQuacks/compare/v1.5.3...HEAD
+[unreleased]: https://github.com/linkdotnet/IfItQuacks/compare/v1.5.4...HEAD
+[v1.5.4]: https://github.com/linkdotnet/IfItQuacks/compare/v1.5.3...v1.5.4
 [v1.5.3]: https://github.com/linkdotnet/IfItQuacks/compare/v1.5.2...v1.5.3
 [v1.5.2]: https://github.com/linkdotnet/IfItQuacks/compare/v1.5.1...v1.5.2
 [v1.5.1]: https://github.com/linkdotnet/IfItQuacks/compare/v1.5.0...v1.5.1
