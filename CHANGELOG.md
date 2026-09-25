@@ -6,6 +6,11 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 ## [Unreleased]
 
+### Changed
+
+- `IFITQUACKS012` is reported by an analyzer instead of the source generator, so the generator no longer binds every
+  `[DuckTyped]` method body on each change. Like any analyzer warning, it is not reported when analyzers are disabled.
+
 ## [v1.5.3] - 2026-09-25
 
 ### Fixed

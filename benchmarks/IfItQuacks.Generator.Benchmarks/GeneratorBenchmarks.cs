@@ -12,6 +12,7 @@ public enum Scenario
     DistinctTypes,
     SameTypeCallSites,
     DuckAs,
+    PlainCode,
 }
 
 [MemoryDiagnoser]
@@ -31,6 +32,7 @@ public class GeneratorBenchmarks
 
     private CSharpCompilation _compilation = null!;
     private CSharpCompilation _edited = null!;
+    private CSharpCompilation _editedCallSiteFile = null!;
     private GeneratorDriver _warmDriver = null!;
 
     [Params(1, 10, 100, 1000)]
@@ -52,6 +54,10 @@ public class GeneratorBenchmarks
             _compilation.SyntaxTrees[^1],
             Parse("public class Unrelated { public void M() => System.Console.WriteLine(1); }"));
 
+        _editedCallSiteFile = _compilation.ReplaceSyntaxTree(
+            _compilation.SyntaxTrees[0],
+            Parse(Source(Scenario, N) + "public static class Appended { }"));
+
         _warmDriver = CreateDriver().RunGenerators(_compilation);
 
         CreateDriver().RunGeneratorsAndUpdateCompilation(_compilation, out var output, out var generatorDiagnostics);
@@ -68,6 +74,10 @@ public class GeneratorBenchmarks
 
     [Benchmark]
     public GeneratorDriver IncrementalRun() => _warmDriver.RunGenerators(_edited);
+
+    // Typing in a file with call sites changes its checksum, so every interceptor location in it changes.
+    [Benchmark]
+    public GeneratorDriver IncrementalEditCallSiteFile() => _warmDriver.RunGenerators(_editedCallSiteFile);
 
     [Benchmark(Baseline = true)]
     public int CompileWithoutGenerator() => _compilation.Clone().GetDiagnostics().Length;
@@ -110,6 +120,13 @@ public class GeneratorBenchmarks
         source.AppendLine("public static class Entry {");
         for (var i = 0; i < n; i++)
         {
+            if (scenario == Scenario.PlainCode)
+            {
+                source.AppendLine(CultureInfo.InvariantCulture,
+                    $"public static object Run{i}(int value) {{ var doubled = value * 2; var total = doubled + value; return Greeter.Plain(total > value ? total : doubled); }}");
+                continue;
+            }
+
             var call = scenario switch
             {
                 Scenario.NoDuckTyping => $"Greeter.Plain(new Type{i}());",

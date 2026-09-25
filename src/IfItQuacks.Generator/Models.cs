@@ -10,10 +10,19 @@ internal sealed record OverloadMember(string FileName, string Prefix, string Suf
 
 internal sealed record MappedShapeOutput(GeneratedFile? File, EquatableArray<Diagnostic> Diagnostics);
 
-internal sealed record DuckTypedMethodOutput(DuckMethodRef Reference, GeneratedFile? Fallback, EquatableArray<Diagnostic> Diagnostics);
+internal sealed record DuckTypedMethodOutput(DuckMethodRef? ValidMethod, GeneratedFile? Fallback, EquatableArray<Diagnostic> Diagnostics);
 
 // An extension method call on a receiver that doesn't implement the interface has no symbol, so it is looked up by name instead.
-internal sealed record DuckMethodRef(string Name, string ContainingType, bool IsExtension);
+internal sealed record DuckMethodRef(string Name, string ContainingType, bool IsExtension)
+{
+    public static DuckMethodRef From(IMethodSymbol method) => new(method.Name, MetadataName(method.ContainingType), method.IsExtensionMethod);
+
+    public static string MetadataName(INamedTypeSymbol type)
+    {
+        var nested = string.Join("+", Utilities.EnclosingTypes(type).Reverse().Select(t => t.MetadataName));
+        return type.ContainingNamespace.IsGlobalNamespace ? nested : type.ContainingNamespace.ToDisplayString() + "." + nested;
+    }
+}
 
 internal sealed record CallSiteOutput(
     string? Interceptor,

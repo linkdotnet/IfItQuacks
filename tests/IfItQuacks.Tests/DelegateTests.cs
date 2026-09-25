@@ -192,6 +192,48 @@ public class DelegateTests
         Assert.Equal("This is Steven|This is Steven", GeneratorTestHelper.CompileAndRun(source));
     }
 
+    [Theory]
+    [InlineData("Func<Person, string> describe; describe = Ops.Describe;")]
+    [InlineData("Func<Person, string>? describe = null; describe += Ops.Describe;")]
+    [InlineData("var describe = (Func<Person, string>)Ops.Describe;")]
+    [InlineData("var describe = true ? Ops.Describe : (Func<Person, string>)(p => p.Name);")]
+    [InlineData("Func<Person, string>? none = null; var describe = none ?? Ops.Describe;")]
+    [InlineData("Func<Person, string>[] all = [Ops.Describe]; var describe = all[0];")]
+    [InlineData("var describe = Pick(Ops.Describe);")]
+    [InlineData("var describe = Returned();")]
+    public void MethodGroupOfDuckTypedMethod_ConvertsToDelegateInAnyPosition(string statements)
+    {
+        var source = $$"""
+            using IfItQuacks;
+            using System;
+
+            public interface INamed { string Name { get; } }
+
+            public class Person { public string Name => "Steven"; }
+
+            public static partial class Ops
+            {
+                [DuckTyped]
+                public static string Describe(INamed named) => "This is " + named.Name;
+            }
+
+            public static class Entry
+            {
+                public static string Run()
+                {
+                    {{statements}}
+                    return describe!(new Person());
+                }
+
+                private static Func<Person, string> Pick(Func<Person, string> describe) => describe;
+
+                private static Func<Person, string> Returned() => Ops.Describe;
+            }
+            """;
+
+        Assert.Equal("This is Steven", GeneratorTestHelper.CompileAndRun(source));
+    }
+
     [Fact]
     public void DuckAs_ConvertsMethodGroupAndLambdaToSingleMethodInterface()
     {

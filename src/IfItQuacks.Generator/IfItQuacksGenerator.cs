@@ -14,9 +14,8 @@ namespace IfItQuacks.Generator;
 [Generator(LanguageNames.CSharp)]
 public sealed class IfItQuacksGenerator : IIncrementalGenerator
 {
-    private const string DuckTypedAttributeName = "IfItQuacks.DuckTypedAttribute";
+    internal const string DuckTypedAttributeName = "IfItQuacks.DuckTypedAttribute";
     private const string DuckShapeAttributeName = "IfItQuacks.DuckShapeAttribute`1";
-    private const string DuckTypeName = "IfItQuacks.Duck";
     private const string DuckAsMethodName = "As";
     private const string DuckStubMethodName = "Stub";
     private const string DuckMergeMethodName = "Merge";
@@ -31,6 +30,10 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
     internal const string CallSitesTrackingName = "IfItQuacks.CallSites";
     internal const string MethodGroupsTrackingName = "IfItQuacks.MethodGroups";
     internal const string MappedShapesTrackingName = "IfItQuacks.MappedShapes";
+    internal const string CallSiteDiagnosticsTrackingName = "IfItQuacks.CallSiteDiagnostics";
+    internal const string AdaptersTrackingName = "IfItQuacks.Adapters";
+    internal const string OverloadsTrackingName = "IfItQuacks.Overloads";
+    internal const string InterceptorsTrackingName = "IfItQuacks.Interceptors";
 
     /// <inheritdoc />
     public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -42,15 +45,15 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             .ForAttributeWithMetadataName(
                 DuckTypedAttributeName,
                 predicate: static (node, _) => node is MethodDeclarationSyntax,
-                transform: static (ctx, ct) => AnalyzeDuckTypedMethod(ctx, ct));
+                transform: static (ctx, _) => AnalyzeDuckTypedMethod(ctx));
 
         context.RegisterSourceOutput(duckTypedMethods, static (spc, method) => EmitDuckTypedMethod(spc, method));
 
-        var duckTypedNames = duckTypedMethods
-            .Select(static (method, _) => method.Reference)
+        var duckTypedMethodIndex = duckTypedMethods
+            .Where(static method => method.ValidMethod is not null)
+            .Select(static (method, _) => method.ValidMethod!)
             .Collect()
-            .Select(static (refs, _) => new EquatableArray<DuckMethodRef>(
-                refs.Distinct().OrderBy(r => r.ContainingType, StringComparer.Ordinal).ThenBy(r => r.Name, StringComparer.Ordinal).ToImmutableArray()));
+            .Select(static (methods, _) => new DuckTypedMethodIndex(methods));
 
         var mappedShapes = context.SyntaxProvider
             .ForAttributeWithMetadataName(
@@ -65,10 +68,8 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             .CreateSyntaxProvider(
                 predicate: static (node, _) => node is InvocationExpressionSyntax invocation && GetInvokedName(invocation) is not null,
                 transform: static (ctx, _) => (InvocationExpressionSyntax)ctx.Node)
-            .Combine(duckTypedNames)
-            .Where(static pair => GetInvokedName(pair.Left) is { } name &&
-                                  (name is DuckAsMethodName or DuckStubMethodName or DuckMergeMethodName or DuckToMethodName ||
-                                   pair.Right.Any(r => r.Name == name)))
+            .Combine(duckTypedMethodIndex)
+            .Where(static pair => CanBeDuckConversion(pair.Left) || pair.Right.ContainsName(GetInvokedName(pair.Left)!))
             .Combine(context.CompilationProvider)
             .Select(static (pair, ct) => AnalyzeCallSite(pair.Left.Left, pair.Left.Right, pair.Right, ct))
             .WithTrackingName(CallSitesTrackingName);
@@ -78,29 +79,40 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             .CreateSyntaxProvider(
                 predicate: static (node, _) => AsMethodGroup(node) is not null,
                 transform: static (ctx, _) => AsMethodGroup(ctx.Node)!)
-            .Combine(duckTypedNames)
-            .Where(static pair => pair.Right.Any(r => r.Name == GetMethodGroupName(pair.Left)))
-            .Select(static (pair, _) => pair.Left)
+            .Combine(duckTypedMethodIndex)
+            .Where(static pair => pair.Right.ContainsName(GetMethodGroupName(pair.Left)))
             .Combine(context.CompilationProvider)
-            .Select(static (pair, ct) => AnalyzeMethodGroup(pair.Left, pair.Right, ct))
+            .Select(static (pair, ct) => AnalyzeMethodGroup(pair.Left.Left, pair.Left.Right, pair.Right, ct))
             .WithTrackingName(MethodGroupsTrackingName);
 
-        context.RegisterSourceOutput(callSites.Collect().Combine(methodGroups.Collect()),
-            static (spc, sites) => EmitCallSites(spc, [.. sites.Left, .. sites.Right]));
+        // Each output is cached on its own, so an edit that only moves call sites regenerates the interceptors alone.
+        var callSiteOutputs = callSites.Collect()
+            .Combine(methodGroups.Collect())
+            .Select(static (sites, _) => new EquatableArray<CallSiteOutput>([.. sites.Left.OfType<CallSiteOutput>(), .. sites.Right.OfType<CallSiteOutput>()]));
+
+        context.RegisterSourceOutput(
+            callSiteOutputs.Select(static (sites, _) => CollectDiagnostics(sites)).WithTrackingName(CallSiteDiagnosticsTrackingName),
+            static (spc, diagnostics) => ReportDiagnostics(spc, diagnostics));
+        context.RegisterSourceOutput(
+            callSiteOutputs.Select(static (sites, _) => CreateAdaptersFile(sites)).WithTrackingName(AdaptersTrackingName),
+            static (spc, files) => AddSources(spc, files));
+        context.RegisterSourceOutput(
+            callSiteOutputs.Select(static (sites, _) => CreateOverloadFiles(sites)).WithTrackingName(OverloadsTrackingName),
+            static (spc, files) => AddSources(spc, files));
+        context.RegisterSourceOutput(
+            callSiteOutputs.Select(static (sites, _) => CreateInterceptorsFile(sites)).WithTrackingName(InterceptorsTrackingName),
+            static (spc, files) => AddSources(spc, files));
     }
 
-    private static DuckTypedMethodOutput AnalyzeDuckTypedMethod(GeneratorAttributeSyntaxContext ctx, CancellationToken ct)
+    private static DuckTypedMethodOutput AnalyzeDuckTypedMethod(GeneratorAttributeSyntaxContext ctx)
     {
         var method = (IMethodSymbol)ctx.TargetSymbol;
         var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
         var compilation = ctx.SemanticModel.Compilation;
         var isValid = ValidateDuckTypedMethod(method, compilation, ctx.TargetNode.GetLocation(), diagnostics);
-        if (isValid && ctx.SemanticModel.GetOperation(ctx.TargetNode, ct) is { } body)
-            diagnostics.AddRange(AdapterCastFinder.Find(body, GetAdaptedParameters(method), compilation));
 
         var fallback = isValid && !method.IsGenericMethod ? CreateFallbackOverload(method, compilation) : null;
-        var reference = new DuckMethodRef(method.Name, MetadataName(method.ContainingType), isValid && method.IsExtensionMethod);
-        return new DuckTypedMethodOutput(reference, fallback, new EquatableArray<Diagnostic>(diagnostics.ToImmutable()));
+        return new DuckTypedMethodOutput(isValid ? DuckMethodRef.From(method) : null, fallback, new EquatableArray<Diagnostic>(diagnostics.ToImmutable()));
     }
 
     private static MappedShapeOutput AnalyzeMappedShape(GeneratorAttributeSyntaxContext ctx)
@@ -217,7 +229,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
 
         // Without a lower priority the generic fallback would take the calls meant for the other overload and throw at runtime.
         if (!method.IsGenericMethod && !SupportsOverloadPriority(compilation) &&
-            method.ContainingType.GetMembers(method.Name).OfType<IMethodSymbol>()
+            UserDeclaredMethods(method.ContainingType, method.Name)
                 .FirstOrDefault(m => m.MethodKind == MethodKind.Ordinary && !IsDuckTyped(m)) is { } overload)
         {
             diagnostics?.Add(Diagnostic.Create(Diagnostics.UnsupportedSignature, location, method.Name,
@@ -257,6 +269,9 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         return true;
     }
 
+    internal static bool IsValidDuckTypedMethod(IMethodSymbol method, Compilation compilation) =>
+        ValidateDuckTypedMethod(method, compilation, Location.None, diagnostics: null);
+
     private static bool SupportsOverloadPriority(Compilation compilation) =>
         compilation is CSharpCompilation { LanguageVersion: >= LanguageVersion.CSharp13 };
 
@@ -282,29 +297,22 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         return false;
     }
 
-    private static string MetadataName(INamedTypeSymbol type)
-    {
-        var nested = Utilities.EnclosingTypes(type).Reverse().Select(t => t.MetadataName);
-        var name = string.Join("+", nested);
-        return type.ContainingNamespace.IsGlobalNamespace ? name : type.ContainingNamespace.ToDisplayString() + "." + name;
-    }
-
     // 'person.Describe()' binds to nothing until the generated extension exists, so the [DuckTyped] method is looked up by name.
     private static IMethodSymbol? FindExtensionCandidate(InvocationExpressionSyntax invocation,
-        EquatableArray<DuckMethodRef> duckMethods, Compilation compilation)
+        DuckTypedMethodIndex duckMethods, Compilation compilation)
     {
         if (GetReceiverExpression(invocation) is null || GetInvokedName(invocation) is not { } name)
             return null;
 
-        return duckMethods
-            .Where(r => r.IsExtension && r.Name == name)
+        return duckMethods.Extensions
+            .Where(r => r.Name == name)
             .Select(r => compilation.GetTypeByMetadataName(r.ContainingType)?.GetMembers(name).OfType<IMethodSymbol>()
                 .FirstOrDefault(m => m.IsExtensionMethod && IsDuckTyped(m)))
             .FirstOrDefault(m => m is not null);
     }
 
     private static CallSiteOutput? AnalyzeCallSite(InvocationExpressionSyntax invocation,
-        EquatableArray<DuckMethodRef> duckMethods, Compilation compilation, CancellationToken ct)
+        DuckTypedMethodIndex duckMethods, Compilation compilation, CancellationToken ct)
     {
         if (!compilation.ContainsSyntaxTree(invocation.SyntaxTree))
             return null;
@@ -341,11 +349,11 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             isReduced = true;
         }
 
-        if (candidate is null && symbolInfo.Symbol is IMethodSymbol bound && FindOverloadedDuckMethod(bound, compilation) is { } overloaded)
+        if (candidate is null && symbolInfo.Symbol is IMethodSymbol bound && FindOverloadedDuckMethod(bound, duckMethods) is { } overloaded)
             return AnalyzeOverloadCall(semanticModel, invocation, bound, overloaded, ct);
 
         var duckMethod = (candidate?.ReducedFrom ?? candidate)?.OriginalDefinition;
-        if (duckMethod is null || !ValidateDuckTypedMethod(duckMethod, compilation, Location.None, diagnostics: null))
+        if (duckMethod is null || !duckMethods.Contains(duckMethod))
             return null;
 
         var bindsWithoutFallback = !duckMethod.IsGenericMethod && symbolInfo.Symbol is not null && SupportsOverloadPriority(compilation);
@@ -494,11 +502,10 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             new EquatableArray<OverloadMember>(nestedAdapters.ToImmutable()));
     }
 
-    private static IMethodSymbol? FindOverloadedDuckMethod(IMethodSymbol bound, Compilation compilation) =>
+    private static IMethodSymbol? FindOverloadedDuckMethod(IMethodSymbol bound, DuckTypedMethodIndex duckMethods) =>
         bound is { MethodKind: MethodKind.Ordinary, IsGenericMethod: false } && !IsDuckTyped(bound)
             ? bound.ContainingType.GetMembers(bound.Name).OfType<IMethodSymbol>().FirstOrDefault(m =>
-                m is { IsGenericMethod: false, DeclaringSyntaxReferences.Length: > 0 } && IsDuckTyped(m) &&
-                ValidateDuckTypedMethod(m, compilation, Location.None, diagnostics: null))
+                m is { IsGenericMethod: false, DeclaringSyntaxReferences.Length: > 0 } && IsDuckTyped(m) && duckMethods.Contains(m))
             : null;
 
     private static bool IsMoreSpecific(ITypeSymbol type, ITypeSymbol than, Compilation compilation) =>
@@ -599,9 +606,23 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         {
             InvocationExpressionSyntax invocation when invocation.Expression == expression => null,
             MemberAccessExpressionSyntax or MemberBindingExpressionSyntax or NameSyntax or TypeSyntax => null,
+            _ when CannotHoldMethodGroup(expression.Parent) => null,
             _ => expression,
         };
     }
+
+    // Only delegate combination and '??' take a method group as an operand; conditions, receivers and the like never do.
+    private static bool CannotHoldMethodGroup(SyntaxNode parent) => parent switch
+    {
+        BinaryExpressionSyntax binary => !binary.IsKind(SyntaxKind.AddExpression) && !binary.IsKind(SyntaxKind.SubtractExpression) &&
+                                         !binary.IsKind(SyntaxKind.CoalesceExpression),
+        PostfixUnaryExpressionSyntax postfix => !postfix.IsKind(SyntaxKind.SuppressNullableWarningExpression),
+        PrefixUnaryExpressionSyntax or ElementAccessExpressionSyntax or ConditionalAccessExpressionSyntax or InterpolationSyntax or
+            IsPatternExpressionSyntax or IfStatementSyntax or WhileStatementSyntax or DoStatementSyntax or ForStatementSyntax or
+            SwitchStatementSyntax or SwitchExpressionSyntax or ThrowStatementSyntax or ThrowExpressionSyntax or AwaitExpressionSyntax or
+            LockStatementSyntax or UsingStatementSyntax or ForEachStatementSyntax or ExpressionStatementSyntax => true,
+        _ => false,
+    };
 
     private static string GetMethodGroupName(ExpressionSyntax expression) => expression switch
     {
@@ -610,7 +631,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         _ => string.Empty,
     };
 
-    private static CallSiteOutput? AnalyzeMethodGroup(ExpressionSyntax expression, Compilation compilation, CancellationToken ct)
+    private static CallSiteOutput? AnalyzeMethodGroup(ExpressionSyntax expression, DuckTypedMethodIndex duckMethods, Compilation compilation, CancellationToken ct)
     {
         if (!compilation.ContainsSyntaxTree(expression.SyntaxTree))
             return null;
@@ -619,7 +640,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         var symbolInfo = semanticModel.GetSymbolInfo(expression, ct);
         var duckMethod = (symbolInfo.Symbol as IMethodSymbol ?? symbolInfo.CandidateSymbols.OfType<IMethodSymbol>().FirstOrDefault())?.OriginalDefinition;
         if (duckMethod is null || duckMethod.IsGenericMethod || duckMethod.DeclaringSyntaxReferences.Length == 0 ||
-            !IsDuckTyped(duckMethod) || !ValidateDuckTypedMethod(duckMethod, compilation, Location.None, diagnostics: null))
+            !duckMethods.Contains(duckMethod))
             return null;
 
         if (semanticModel.GetTypeInfo(expression, ct).ConvertedType is not INamedTypeSymbol { DelegateInvokeMethod: { } invoke } ||
@@ -1310,7 +1331,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             .ToImmutableArray();
 
     // Every parameter an adapter can arrive in, with the interface that adapter implements.
-    private static Dictionary<IParameterSymbol, ITypeSymbol> GetAdaptedParameters(IMethodSymbol method)
+    internal static Dictionary<IParameterSymbol, ITypeSymbol> GetAdaptedParameters(IMethodSymbol method)
     {
         var shapes = GetDuckParameters(method).ToDictionary<IParameterSymbol, ITypeSymbol, IParameterSymbol>(p => p, p => p.Type, SymbolEqualityComparer.Default);
         foreach (var typeParameter in GetConstraintTypeParameters(method))
@@ -1322,13 +1343,13 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         return shapes;
     }
 
-    private static bool IsDuckTyped(IMethodSymbol method) =>
-        method.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == DuckTypedAttributeName);
+    internal static bool IsDuckTyped(IMethodSymbol method) =>
+        method.GetAttributes().Any(a => KnownSymbols.IsDuckTypedAttribute(a.AttributeClass));
 
     private static bool IsDuckConversion(IMethodSymbol method, Compilation compilation) =>
         method.Name is DuckAsMethodName or DuckStubMethodName or DuckMergeMethodName or DuckToMethodName &&
         method.TypeArguments.Length == 1 &&
-        method.ContainingType.ToDisplayString() == DuckTypeName &&
+        KnownSymbols.IsDuckType(method.ContainingType) &&
         SymbolEqualityComparer.Default.Equals(method.ContainingAssembly, compilation.Assembly);
 
     private static bool IsInGenericType(INamedTypeSymbol type) => Utilities.EnclosingTypes(type).Any(t => t.IsGenericType);
@@ -1347,14 +1368,24 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         return null;
     }
 
-    private static string? GetInvokedName(InvocationExpressionSyntax invocation) => invocation.Expression switch
+    private static string? GetInvokedName(InvocationExpressionSyntax invocation) => GetInvokedNameSyntax(invocation)?.Identifier.Text;
+
+    private static SimpleNameSyntax? GetInvokedNameSyntax(InvocationExpressionSyntax invocation) => invocation.Expression switch
     {
-        SimpleNameSyntax name => name.Identifier.Text,
-        MemberAccessExpressionSyntax member => member.Name.Identifier.Text,
+        SimpleNameSyntax name => name,
+        MemberAccessExpressionSyntax member => member.Name,
         // 'receiver?.Greet(duck)': the conditional access holds the receiver, the invocation only the member name.
-        MemberBindingExpressionSyntax binding => binding.Name.Identifier.Text,
+        MemberBindingExpressionSyntax binding => binding.Name,
         _ => null,
     };
+
+    // The type argument of a Duck conversion can't be inferred from its 'object' parameters, so it is always written out.
+    private static bool CanBeDuckConversion(InvocationExpressionSyntax invocation) =>
+        GetInvokedNameSyntax(invocation) is GenericNameSyntax
+        {
+            Identifier.Text: DuckAsMethodName or DuckStubMethodName or DuckMergeMethodName or DuckToMethodName,
+            TypeArgumentList.Arguments.Count: 1,
+        };
 
     // 'base.Greet(duck)' calls the method non-virtually, which neither an interceptor nor the fallback overload can reproduce.
     private static bool IsBaseCall(InvocationExpressionSyntax invocation) =>
@@ -1369,73 +1400,82 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             spc.AddSource(method.Fallback.Name, SourceText.From(method.Fallback.Source, Encoding.UTF8));
     }
 
-    private static void EmitCallSites(SourceProductionContext spc, ImmutableArray<CallSiteOutput?> sites)
+    private static EquatableArray<Diagnostic> CollectDiagnostics(EquatableArray<CallSiteOutput> sites) =>
+        new([.. sites.SelectMany(site => site.Diagnostics)]);
+
+    private static EquatableArray<GeneratedFile> CreateAdaptersFile(EquatableArray<CallSiteOutput> sites)
     {
         var adapters = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        foreach (var adapter in sites.SelectMany(site => site.Adapters))
+            adapters[adapter.Name] = adapter.Source;
+
+        if (adapters.Count == 0)
+            return default;
+
+        var source = new StringBuilder(Header);
+        source.AppendLine("namespace " + GeneratedNamespace);
+        source.AppendLine("{");
+        foreach (var adapter in adapters.Values)
+            source.Append(adapter);
+        source.AppendLine("}");
+        return new([new GeneratedFile("IfItQuacks.Adapters.g.cs", source.ToString())]);
+    }
+
+    private static EquatableArray<GeneratedFile> CreateOverloadFiles(EquatableArray<CallSiteOutput> sites)
+    {
         var overloadFiles = new SortedDictionary<string, (OverloadMember Template, SortedSet<string> Members)>(StringComparer.Ordinal);
-        var interceptors = new StringBuilder();
-        var interceptorCount = 0;
-
-        foreach (var site in sites.OfType<CallSiteOutput>())
+        foreach (var overload in sites.SelectMany(site => site.NestedAdapters.Prepend(site.Overload)).OfType<OverloadMember>())
         {
-            foreach (var diagnostic in site.Diagnostics)
-                spc.ReportDiagnostic(diagnostic);
-
-            foreach (var adapter in site.Adapters)
-                adapters[adapter.Name] = adapter.Source;
-
-            foreach (var overload in site.NestedAdapters.Prepend(site.Overload).OfType<OverloadMember>())
-            {
-                if (!overloadFiles.TryGetValue(overload.FileName, out var file))
-                    overloadFiles[overload.FileName] = file = (overload, new SortedSet<string>(StringComparer.Ordinal));
-                file.Members.Add(overload.Member);
-            }
-
-            if (site.Interceptor is not null)
-            {
-                interceptorCount++;
-                interceptors.AppendLine();
-                interceptors.Append(site.Interceptor.Replace(InterceptorIndexPlaceholder, interceptorCount.ToString(CultureInfo.InvariantCulture)));
-            }
+            if (!overloadFiles.TryGetValue(overload.FileName, out var file))
+                overloadFiles[overload.FileName] = file = (overload, new SortedSet<string>(StringComparer.Ordinal));
+            file.Members.Add(overload.Member);
         }
 
-        foreach (var (template, members) in overloadFiles.Values)
+        return new([.. overloadFiles.Values.Select(file =>
         {
-            var indent = template.Prefix.Substring(template.Prefix.LastIndexOf('\n') + 1);
-            var source = template.Prefix + string.Join("\n" + indent, members) + template.Suffix;
-            spc.AddSource(template.FileName, SourceText.From(source, Encoding.UTF8));
-        }
+            var indent = file.Template.Prefix.Substring(file.Template.Prefix.LastIndexOf('\n') + 1);
+            return new GeneratedFile(file.Template.FileName, file.Template.Prefix + string.Join("\n" + indent, file.Members) + file.Template.Suffix);
+        })]);
+    }
 
-        if (interceptorCount > 0)
-        {
-            var sb = new StringBuilder(Header);
-            sb.AppendLine(EmbeddedSources.InterceptsLocationAttributePolyfill);
-            sb.AppendLine("namespace " + GeneratedNamespace);
-            sb.AppendLine("{");
-            sb.AppendLine("    file static class IfItQuacksInterceptors");
-            sb.AppendLine("    {");
-            sb.Append(interceptors);
-            sb.AppendLine("    }");
-            sb.AppendLine("}");
-            spc.AddSource("IfItQuacks.Interceptors.g.cs", SourceText.From(sb.ToString(), Encoding.UTF8));
-        }
+    private static EquatableArray<GeneratedFile> CreateInterceptorsFile(EquatableArray<CallSiteOutput> sites)
+    {
+        var interceptors = sites.Select(site => site.Interceptor).OfType<string>().ToList();
+        if (interceptors.Count == 0)
+            return default;
 
-        if (adapters.Count > 0)
+        var source = new StringBuilder(Header);
+        source.AppendLine(EmbeddedSources.InterceptsLocationAttributePolyfill);
+        source.AppendLine("namespace " + GeneratedNamespace);
+        source.AppendLine("{");
+        source.AppendLine("    file static class IfItQuacksInterceptors");
+        source.AppendLine("    {");
+        for (var i = 0; i < interceptors.Count; i++)
         {
-            var sb = new StringBuilder(Header);
-            sb.AppendLine("namespace " + GeneratedNamespace);
-            sb.AppendLine("{");
-            foreach (var adapter in adapters.Values)
-                sb.Append(adapter);
-            sb.AppendLine("}");
-            spc.AddSource("IfItQuacks.Adapters.g.cs", SourceText.From(sb.ToString(), Encoding.UTF8));
+            source.AppendLine();
+            source.Append(interceptors[i].Replace(InterceptorIndexPlaceholder, (i + 1).ToString(CultureInfo.InvariantCulture)));
         }
+        source.AppendLine("    }");
+        source.AppendLine("}");
+        return new([new GeneratedFile("IfItQuacks.Interceptors.g.cs", source.ToString())]);
+    }
+
+    private static void ReportDiagnostics(SourceProductionContext context, EquatableArray<Diagnostic> diagnostics)
+    {
+        foreach (var diagnostic in diagnostics)
+            context.ReportDiagnostic(diagnostic);
+    }
+
+    private static void AddSources(SourceProductionContext context, EquatableArray<GeneratedFile> files)
+    {
+        foreach (var file in files)
+            context.AddSource(file.Name, SourceText.From(file.Source, Encoding.UTF8));
     }
 
     private static IMethodSymbol? FindFallbackConflict(IMethodSymbol method)
     {
         var subsets = GetFallbackSubsets(GetDuckParameters(method)).ToImmutableArray();
-        return method.ContainingType.GetMembers(method.Name).OfType<IMethodSymbol>().FirstOrDefault(m =>
+        return UserDeclaredMethods(method.ContainingType, method.Name).FirstOrDefault(m =>
             m is { MethodKind: MethodKind.Ordinary, IsGenericMethod: true } && !IsDuckTyped(m) &&
             subsets.Any(subset => HasFallbackSignature(m, method, subset)));
     }
@@ -1445,13 +1485,23 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
     {
         for (var type = method.ContainingType.BaseType; type is not null; type = type.BaseType)
         {
-            if (type.GetMembers(method.Name).OfType<IMethodSymbol>().FirstOrDefault(m =>
+            if (UserDeclaredMethods(type, method.Name).FirstOrDefault(m =>
                     m.MethodKind == MethodKind.Ordinary && compilation.IsSymbolAccessibleWithin(m, method.ContainingType) &&
                     !Overrides(method, m)) is { } inherited)
                 return inherited;
         }
 
         return null;
+    }
+
+    // The analyzer validates against a compilation that already contains the generated fallbacks, which aren't the user's overloads.
+    private static IEnumerable<IMethodSymbol> UserDeclaredMethods(INamedTypeSymbol type, string name) =>
+        type.GetMembers(name).OfType<IMethodSymbol>().Where(m => !m.DeclaringSyntaxReferences.Any(r => IsGeneratedFile(r.SyntaxTree.FilePath)));
+
+    private static bool IsGeneratedFile(string path)
+    {
+        var fileName = path.Substring(path.LastIndexOfAny(['/', '\\']) + 1);
+        return fileName.StartsWith("IfItQuacks.", StringComparison.Ordinal) && fileName.EndsWith(".g.cs", StringComparison.Ordinal);
     }
 
     private static bool Overrides(IMethodSymbol method, IMethodSymbol other)

@@ -48,6 +48,21 @@ public class PipelineTests
     }
 
     [Fact]
+    public void EditingCallSiteFile_RegeneratesOnlyInterceptors()
+    {
+        var compilation = GeneratorTestHelper.CreateCompilation(OutputKind.DynamicallyLinkedLibrary, null, Shapes);
+        var driver = GeneratorTestHelper.CreateTrackingDriver().RunGenerators(compilation, TestContext.Current.CancellationToken);
+
+        var edited = compilation.ReplaceSyntaxTree(compilation.SyntaxTrees.Single(), GeneratorTestHelper.ParseText(Shapes + "public class Appended { }"));
+        var result = driver.RunGenerators(edited, TestContext.Current.CancellationToken).GetRunResult().Results.Single();
+
+        Assert.All(result.TrackedSteps["IfItQuacks.Adapters"].SelectMany(step => step.Outputs), output =>
+            Assert.True(output.Reason is IncrementalStepRunReason.Cached or IncrementalStepRunReason.Unchanged, output.Reason.ToString()));
+        Assert.Contains(result.TrackedSteps["IfItQuacks.Interceptors"].SelectMany(step => step.Outputs),
+            output => output.Reason == IncrementalStepRunReason.Modified);
+    }
+
+    [Fact]
     public void EditingUnrelatedFile_DoesNotRegenerateMappedShapes()
     {
         const string mapped = """
