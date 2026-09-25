@@ -7,15 +7,15 @@ internal static class TypeWrapper
 {
     public static string WrapInContainingScope(INamedTypeSymbol type, string memberSource)
     {
-        var typeChain = Utilities.EnclosingTypes(type).Reverse().ToList();
+        var typeChain = type.EnclosingTypes().Reverse().ToList();
 
-        var sb = new StringBuilder();
+        var code = new StringBuilder();
         var ns = type.ContainingNamespace;
         var hasNamespace = ns is { IsGlobalNamespace: false };
         if (hasNamespace)
         {
-            sb.AppendLine($"namespace {ns.ToDisplayString()}");
-            sb.AppendLine("{");
+            code.AppendLine($"namespace {ns.ToDisplayString()}");
+            code.AppendLine("{");
         }
 
         var indent = hasNamespace ? "    " : "";
@@ -32,24 +32,24 @@ internal static class TypeWrapper
             var modifiers = (t.IsStatic ? "static " : "") +
                             (t.IsReadOnly ? "readonly " : "") +
                             (t.IsRefLikeType ? "ref " : "");
-            sb.AppendLine($"{indent}{Utilities.AccessibilityKeyword(t.DeclaredAccessibility)} {modifiers}partial {kind} {t.Name}{TypeParams(t)}");
-            sb.AppendLine($"{indent}{{");
+            code.AppendLine($"{indent}{SourceSyntax.AccessibilityKeyword(t.DeclaredAccessibility)} {modifiers}partial {kind} {t.Name}{TypeParams(t)}");
+            code.AppendLine($"{indent}{{");
             indent = new string(' ', indent.Length + 4);
         }
 
         foreach (var line in memberSource.Split('\n'))
-            sb.AppendLine(indent + line.TrimEnd('\r'));
+            code.AppendLine(indent + line.TrimEnd('\r'));
 
         for (var i = 0; i < typeChain.Count; i++)
         {
             indent = indent.Substring(0, indent.Length - 4);
-            sb.AppendLine(indent + "}");
+            code.AppendLine(indent + "}");
         }
 
         if (hasNamespace)
-            sb.AppendLine("}");
+            code.AppendLine("}");
 
-        return sb.ToString();
+        return code.ToString();
     }
 
     public static (string Prefix, string Suffix) WrapTemplate(INamedTypeSymbol type)

@@ -103,4 +103,19 @@ internal static class Diagnostics
                      "for a duck-typed constraint the type argument is the adapter type itself. A cast, 'as' or type pattern for the original type therefore " +
                      "fails for these calls, while it succeeds for arguments implementing the interface. Conversion operators can't help: the compiler only " +
                      "sees the interface or type parameter. 'Duck.Unwrap' returns the original instance in both cases.");
+
+    public static Diagnostic CreateShapeMismatch(Location location, ITypeSymbol type, ITypeSymbol shape, string reason) =>
+        Diagnostic.Create(ShapeMismatch, location, type.ToDisplayString(), shape.ToDisplayString(), reason);
+
+    public static Diagnostic CreateUnsupportedSignature(Location location, IMethodSymbol method, string reason) =>
+        Diagnostic.Create(UnsupportedSignature, location, method.Name, reason);
+
+    public static Diagnostic CreateUnsupportedShapeMember(Location location, ITypeSymbol shape, ISymbol member) =>
+        Diagnostic.Create(UnsupportedShapeMember, location, shape.ToDisplayString(), member.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+
+    public static Diagnostic CreateUnsupportedStructArgument(Location location, ITypeSymbol type, ITypeSymbol shape, string reason) =>
+        Diagnostic.Create(UnsupportedStructArgument, location, type.ToDisplayString(), shape.ToDisplayString(), reason);
+
+    public static Diagnostic CreateUnsupportedConversionTarget(Location location, ITypeSymbol target, ITypeSymbol source, string reason) =>
+        Diagnostic.Create(UnsupportedConversionTarget, location, target.ToDisplayString(), source.ToDisplayString(), reason);
 }

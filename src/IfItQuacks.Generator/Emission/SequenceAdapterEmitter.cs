@@ -25,7 +25,7 @@ internal static class SequenceAdapterEmitter
         if (shape.TypeArguments[0] is not INamedTypeSymbol { TypeKind: TypeKind.Interface } elementShape)
             return null;
 
-        return AllInterfaces(source)
+        return SelfAndAllInterfaces(source)
             .Where(i => MetadataName(i.OriginalDefinition) == definition)
             .Select(i => i.TypeArguments[0])
             .OfType<INamedTypeSymbol>()
@@ -37,48 +37,48 @@ internal static class SequenceAdapterEmitter
     }
 
     public static string GetAdapterName(INamedTypeSymbol shape, ITypeSymbol source) =>
-        $"SequenceAdapter_{Sanitize(shape.ToDisplayString())}_{Sanitize(source.ToDisplayString())}";
+        $"SequenceAdapter_{GeneratedCode.ToIdentifier(shape.ToDisplayString())}_{GeneratedCode.ToIdentifier(source.ToDisplayString())}";
 
     public static string Emit(INamedTypeSymbol shape, ITypeSymbol source, SequenceMatch match, string elementAdapter, string adapterName)
     {
         var shapeName = $"global::{shape.ToDisplayString()}";
         var elementName = $"global::{match.ElementShape.ToDisplayString()}";
         var sourceElement = match.SourceElement.ToDisplayString();
-        var wrap = $"{elementName})(new global::IfItQuacks.Generated.{elementAdapter}";
+        var wrap = $"{elementName})(new global::{GeneratedCode.Namespace}.{elementAdapter}";
 
-        var sb = new StringBuilder();
-        sb.AppendLine($"    internal readonly struct {adapterName} : {shapeName}, global::IfItQuacks.IDuckAdapter");
-        sb.AppendLine("    {");
-        sb.AppendLine($"        private readonly {source.ToDisplayString()} _value;");
-        sb.AppendLine($"        public {adapterName}({source.ToDisplayString()} value) => _value = value;");
-        sb.AppendLine("        object? global::IfItQuacks.IDuckAdapter.Value => _value;");
+        var code = new StringBuilder();
+        code.AppendLine($"    internal readonly struct {adapterName} : {shapeName}, global::IfItQuacks.IDuckAdapter");
+        code.AppendLine("    {");
+        code.AppendLine($"        private readonly {source.ToDisplayString()} _value;");
+        code.AppendLine($"        public {adapterName}({source.ToDisplayString()} value) => _value = value;");
+        code.AppendLine("        object? global::IfItQuacks.IDuckAdapter.Value => _value;");
 
-        sb.AppendLine($"        global::System.Collections.Generic.IEnumerator<{elementName}> global::System.Collections.Generic.IEnumerable<{elementName}>.GetEnumerator()");
-        sb.AppendLine("        {");
-        sb.AppendLine($"            foreach (var item in (global::System.Collections.Generic.IEnumerable<{sourceElement}>)_value)");
-        sb.AppendLine($"                yield return ({wrap}(item));");
-        sb.AppendLine("        }");
-        sb.AppendLine($"        global::System.Collections.IEnumerator global::System.Collections.IEnumerable.GetEnumerator() =>");
-        sb.AppendLine($"            ((global::System.Collections.Generic.IEnumerable<{elementName}>)this).GetEnumerator();");
+        code.AppendLine($"        global::System.Collections.Generic.IEnumerator<{elementName}> global::System.Collections.Generic.IEnumerable<{elementName}>.GetEnumerator()");
+        code.AppendLine("        {");
+        code.AppendLine($"            foreach (var item in (global::System.Collections.Generic.IEnumerable<{sourceElement}>)_value)");
+        code.AppendLine($"                yield return ({wrap}(item));");
+        code.AppendLine("        }");
+        code.AppendLine($"        global::System.Collections.IEnumerator global::System.Collections.IEnumerable.GetEnumerator() =>");
+        code.AppendLine($"            ((global::System.Collections.Generic.IEnumerable<{elementName}>)this).GetEnumerator();");
 
         if (match.ShapeDefinition is ReadOnlyCollection or ReadOnlyList)
         {
-            sb.AppendLine($"        int global::System.Collections.Generic.IReadOnlyCollection<{elementName}>.Count =>");
-            sb.AppendLine($"            ((global::System.Collections.Generic.IReadOnlyCollection<{sourceElement}>)_value).Count;");
+            code.AppendLine($"        int global::System.Collections.Generic.IReadOnlyCollection<{elementName}>.Count =>");
+            code.AppendLine($"            ((global::System.Collections.Generic.IReadOnlyCollection<{sourceElement}>)_value).Count;");
         }
 
         if (match.ShapeDefinition == ReadOnlyList)
         {
-            sb.AppendLine($"        {elementName} global::System.Collections.Generic.IReadOnlyList<{elementName}>.this[int index] =>");
-            sb.AppendLine($"            ({wrap}(((global::System.Collections.Generic.IReadOnlyList<{sourceElement}>)_value)[index]));");
+            code.AppendLine($"        {elementName} global::System.Collections.Generic.IReadOnlyList<{elementName}>.this[int index] =>");
+            code.AppendLine($"            ({wrap}(((global::System.Collections.Generic.IReadOnlyList<{sourceElement}>)_value)[index]));");
         }
 
-        AdapterEmitter.EmitIdentityMembers(sb, source, adapterName);
-        sb.AppendLine("    }");
-        return sb.ToString();
+        AdapterEmitter.EmitIdentityMembers(code, source, adapterName);
+        code.AppendLine("    }");
+        return code.ToString();
     }
 
-    private static IEnumerable<INamedTypeSymbol> AllInterfaces(ITypeSymbol source) => source switch
+    private static IEnumerable<INamedTypeSymbol> SelfAndAllInterfaces(ITypeSymbol source) => source switch
     {
         INamedTypeSymbol { TypeKind: TypeKind.Interface } named => named.AllInterfaces.Prepend(named),
         INamedTypeSymbol named => named.AllInterfaces,
@@ -89,11 +89,4 @@ internal static class SequenceAdapterEmitter
     private static string MetadataName(INamedTypeSymbol type) =>
         type.ContainingNamespace.IsGlobalNamespace ? type.MetadataName : $"{type.ContainingNamespace.ToDisplayString()}.{type.MetadataName}";
 
-    private static string Sanitize(string s)
-    {
-        var sb = new StringBuilder(s.Length);
-        foreach (var c in s)
-            sb.Append(char.IsLetterOrDigit(c) ? c : '_');
-        return sb.ToString();
-    }
 }

@@ -11,12 +11,11 @@ namespace IfItQuacks.Generator;
 /// </summary>
 internal static class StructuralCopyEmitter
 {
-    private const string CastByExample = "__CastByExample";
 
     public static string GetFactoryName(INamedTypeSymbol target, INamedTypeSymbol source) =>
         source.IsAnonymousType
-            ? $"CopyFactory_{Sanitize(target.ToDisplayString())}_Anonymous_{Sanitize(AnonymousWitness(source))}"
-            : $"CopyFactory_{Sanitize(target.ToDisplayString())}_{Sanitize(source.ToDisplayString())}";
+            ? $"CopyFactory_{GeneratedCode.ToIdentifier(target.ToDisplayString())}_Anonymous_{GeneratedCode.ToIdentifier(AnonymousWitness(source))}"
+            : $"CopyFactory_{GeneratedCode.ToIdentifier(target.ToDisplayString())}_{GeneratedCode.ToIdentifier(source.ToDisplayString())}";
 
     /// <summary>The reason <paramref name="target"/> cannot be built from <paramref name="source"/>, or <c>null</c>.</summary>
     public static string? FindMismatch(INamedTypeSymbol target, INamedTypeSymbol source, Compilation compilation)
@@ -30,11 +29,11 @@ internal static class StructuralCopyEmitter
         if (!IsReachable(target))
             return "the target type is not accessible from generated code";
 
-        if (FindConstructor(target, source, compilation) is not { } constructor)
+        if (FindLargestFillableConstructor(target, source, compilation) is not { } constructor)
             return "no accessible constructor can be filled from the source";
 
         var set = constructor.Parameters.Select(p => p.Name).ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
-        var unmatched = WritableMembers(target)
+        var unmatched = InitializableMembers(target)
             .Where(m => !set.Contains(m.Name))
             .FirstOrDefault(m => FindSourceMember(source, m.Name, MemberType(m), compilation) is null);
 
@@ -45,14 +44,14 @@ internal static class StructuralCopyEmitter
 
     public static string Emit(INamedTypeSymbol target, INamedTypeSymbol source, string factoryName, Compilation compilation)
     {
-        var constructor = FindConstructor(target, source, compilation)!;
+        var constructor = FindLargestFillableConstructor(target, source, compilation)!;
         var receiver = source.IsAnonymousType ? "source" : "value";
         var set = constructor.Parameters.Select(p => p.Name).ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
 
         var arguments = string.Join(", ", constructor.Parameters.Select(p =>
             $"{receiver}.{FindSourceMember(source, p.Name, p.Type, compilation)!.Name}"));
 
-        var assignments = WritableMembers(target)
+        var assignments = InitializableMembers(target)
             .Where(m => !set.Contains(m.Name))
             .Select(m => $"{m.Name} = {receiver}.{FindSourceMember(source, m.Name, MemberType(m), compilation)!.Name}")
             .ToList();
@@ -60,37 +59,35 @@ internal static class StructuralCopyEmitter
         var initializer = assignments.Count == 0 ? "" : " { " + string.Join(", ", assignments) + " }";
         var creation = $"new {target.ToDisplayString()}({arguments}){initializer}";
 
-        var sb = new StringBuilder();
-        sb.AppendLine($"    internal static class {factoryName}");
-        sb.AppendLine("    {");
+        var code = new StringBuilder();
+        code.AppendLine($"    internal static class {factoryName}");
+        code.AppendLine("    {");
         if (source.IsAnonymousType)
         {
             // An anonymous type can't be named, but an identical anonymous object expression in the same compilation has the same type.
-            sb.AppendLine($"        public static {target.ToDisplayString()} Create(object value)");
-            sb.AppendLine("        {");
-            sb.AppendLine($"            var source = {CastByExample}(value, static () => {AnonymousWitness(source)});");
-            sb.AppendLine($"            return {creation};");
-            sb.AppendLine("        }");
-            sb.AppendLine($"        private static T {CastByExample}<T>(object value, global::System.Func<T> example) => (T)value;");
+            code.AppendLine($"        public static {target.ToDisplayString()} Create(object value)");
+            code.AppendLine("        {");
+            code.AppendLine($"            var source = {GeneratedCode.CastByExample("value", AnonymousWitness(source))};");
+            code.AppendLine($"            return {creation};");
+            code.AppendLine("        }");
+            code.AppendLine("        " + GeneratedCode.CastByExampleDeclaration);
         }
         else
         {
-            sb.AppendLine($"        public static {target.ToDisplayString()} Create({source.ToDisplayString()} value) => {creation};");
+            code.AppendLine($"        public static {target.ToDisplayString()} Create({source.ToDisplayString()} value) => {creation};");
         }
-        sb.AppendLine("    }");
-        return sb.ToString();
+        code.AppendLine("    }");
+        return code.ToString();
     }
 
-    // The constructor taking the most parameters the source can fill; a parameterless one always qualifies.
-    private static IMethodSymbol? FindConstructor(INamedTypeSymbol target, INamedTypeSymbol source, Compilation compilation) =>
+    private static IMethodSymbol? FindLargestFillableConstructor(INamedTypeSymbol target, INamedTypeSymbol source, Compilation compilation) =>
         target.InstanceConstructors
             .Where(c => c.DeclaredAccessibility is Accessibility.Public or Accessibility.Internal && !c.IsVararg)
             .OrderByDescending(c => c.Parameters.Length)
             .FirstOrDefault(c => c.Parameters.All(p =>
                 p.RefKind == RefKind.None && FindSourceMember(source, p.Name, p.Type, compilation) is not null));
 
-    // Target members that have to be filled: everything an object initializer could set.
-    private static IEnumerable<ISymbol> WritableMembers(INamedTypeSymbol target) =>
+    private static IEnumerable<ISymbol> InitializableMembers(INamedTypeSymbol target) =>
         ShapeMatcher.GetAllMembers(target).Where(m => m switch
         {
             IPropertySymbol { IsIndexer: false, IsStatic: false, DeclaredAccessibility: Accessibility.Public } property =>
@@ -116,17 +113,10 @@ internal static class StructuralCopyEmitter
         member is IPropertySymbol property ? property.Type : ((IFieldSymbol)member).Type;
 
     private static bool IsReachable(INamedTypeSymbol type) =>
-        Utilities.EnclosingTypes(type).All(t => t.DeclaredAccessibility is Accessibility.Public or Accessibility.Internal);
+        type.EnclosingTypes().All(t => t.DeclaredAccessibility is Accessibility.Public or Accessibility.Internal);
 
     private static string AnonymousWitness(INamedTypeSymbol anonymousType) =>
         "new { " + string.Join(", ", anonymousType.GetMembers().OfType<IPropertySymbol>().Select(p =>
-            $"{Utilities.Identifier(p.Name)} = default({p.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)})!")) + " }";
+            $"{SourceSyntax.Identifier(p.Name)} = default({p.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)})!")) + " }";
 
-    private static string Sanitize(string s)
-    {
-        var sb = new StringBuilder(s.Length);
-        foreach (var c in s)
-            sb.Append(char.IsLetterOrDigit(c) ? c : '_');
-        return sb.ToString();
-    }
 }

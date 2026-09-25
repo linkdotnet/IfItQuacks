@@ -23,13 +23,13 @@ public sealed class AdapterCastAnalyzer : DiagnosticAnalyzer
         context.EnableConcurrentExecution();
         context.RegisterCompilationStartAction(static compilationStart =>
         {
-            if (compilationStart.Compilation.Assembly.GetTypeByMetadataName(IfItQuacksGenerator.DuckTypedAttributeName) is null)
+            if (compilationStart.Compilation.Assembly.GetTypeByMetadataName(KnownSymbols.DuckTypedAttributeMetadataName) is null)
                 return;
 
             compilationStart.RegisterSymbolStartAction(static symbolStart =>
             {
                 var method = (IMethodSymbol)symbolStart.Symbol;
-                if (IfItQuacksGenerator.IsDuckTyped(method) && IfItQuacksGenerator.IsValidDuckTypedMethod(method, symbolStart.Compilation))
+                if (KnownSymbols.IsDuckTyped(method) && DuckTypedMethodValidator.IsValid(method, symbolStart.Compilation))
                     symbolStart.RegisterOperationBlockAction(blocks => ReportAdapterCasts(blocks, method));
             }, SymbolKind.Method);
         });
@@ -37,7 +37,7 @@ public sealed class AdapterCastAnalyzer : DiagnosticAnalyzer
 
     private static void ReportAdapterCasts(OperationBlockAnalysisContext context, IMethodSymbol method)
     {
-        var adaptedParameters = IfItQuacksGenerator.GetAdaptedParameters(method);
+        var adaptedParameters = DuckTypedSignature.GetParametersReceivingAdapters(method);
         foreach (var block in context.OperationBlocks)
         {
             foreach (var diagnostic in AdapterCastFinder.Find(block, adaptedParameters, context.Compilation))
