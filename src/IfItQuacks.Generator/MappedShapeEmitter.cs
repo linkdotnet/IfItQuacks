@@ -24,9 +24,6 @@ internal static class MappedShapeEmitter
         public bool IsDerived(ISymbol member) => !SymbolEqualityComparer.Default.Equals(member.ContainingType, Shape);
     }
 
-    private const string AttributeMetadataName = "DuckShapeAttribute`1";
-    private const string AttributeNamespace = "IfItQuacks";
-
     /// <summary>
     /// A generator cannot see another generator's output, so the interface symbol is still empty while call
     /// sites are analysed. Structural matching and the adapters therefore derive the same members from the
@@ -38,8 +35,7 @@ internal static class MappedShapeEmitter
             return null;
 
         var attributes = shape.GetAttributes()
-            .Where(a => a.AttributeClass is { MetadataName: AttributeMetadataName } c &&
-                        c.ContainingNamespace.ToDisplayString() == AttributeNamespace)
+            .Where(a => KnownSymbols.IsDuckShapeAttribute(a.AttributeClass))
             .ToImmutableArray();
         if (attributes.IsEmpty)
             return null;

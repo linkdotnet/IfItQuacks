@@ -4,6 +4,7 @@ using System.Runtime.Loader;
 using IfItQuacks.Generator;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Emit;
 using Xunit;
 
@@ -27,7 +28,7 @@ internal static class GeneratorTestHelper
 
         driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var generatorDiagnostics);
 
-        var allDiagnostics = outputCompilation.GetDiagnostics()
+        var allDiagnostics = outputCompilation.WithAnalyzers([new AdapterCastAnalyzer()]).GetAllDiagnosticsAsync().GetAwaiter().GetResult()
             .Concat(generatorDiagnostics)
             .Where(d => d.Severity >= DiagnosticSeverity.Warning)
             .ToImmutableArray();
