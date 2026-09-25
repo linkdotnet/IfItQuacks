@@ -32,20 +32,19 @@ internal static class AdapterCastFinder
     {
         IConversionOperation { IsImplicit: false } conversion => [(conversion.Operand, conversion.Type, Cast, conversion.Syntax)],
         IIsTypeOperation isType => [(isType.ValueOperand, isType.TypeOperand, TypeTest, isType.Syntax)],
-        IIsPatternOperation isPattern => Matched(isPattern.Value, isPattern.Pattern),
-        ISwitchExpressionOperation switchExpression => switchExpression.Arms.SelectMany(arm => Matched(switchExpression.Value, arm.Pattern)),
+        IIsPatternOperation isPattern => TopLevelTypeTests(isPattern.Value, isPattern.Pattern),
+        ISwitchExpressionOperation switchExpression => switchExpression.Arms.SelectMany(arm => TopLevelTypeTests(switchExpression.Value, arm.Pattern)),
         ISwitchOperation switchStatement => switchStatement.Cases
             .SelectMany(c => c.Clauses)
             .OfType<IPatternCaseClauseOperation>()
-            .SelectMany(clause => Matched(switchStatement.Value, clause.Pattern)),
+            .SelectMany(clause => TopLevelTypeTests(switchStatement.Value, clause.Pattern)),
         _ => [],
     };
 
-    // Only top-level patterns test the value itself; property subpatterns test its members.
-    private static IEnumerable<(IOperation Value, ITypeSymbol? Type, string Kind, SyntaxNode Syntax)> Matched(IOperation value, IPatternOperation pattern) => pattern switch
+    private static IEnumerable<(IOperation Value, ITypeSymbol? Type, string Kind, SyntaxNode Syntax)> TopLevelTypeTests(IOperation value, IPatternOperation pattern) => pattern switch
     {
-        IBinaryPatternOperation binary => Matched(value, binary.LeftPattern).Concat(Matched(value, binary.RightPattern)),
-        INegatedPatternOperation negated => Matched(value, negated.Pattern),
+        IBinaryPatternOperation binary => TopLevelTypeTests(value, binary.LeftPattern).Concat(TopLevelTypeTests(value, binary.RightPattern)),
+        INegatedPatternOperation negated => TopLevelTypeTests(value, negated.Pattern),
         IDeclarationPatternOperation declaration => [(value, declaration.MatchedType, TypeTest, pattern.Syntax)],
         ITypePatternOperation type => [(value, type.MatchedType, TypeTest, pattern.Syntax)],
         IRecursivePatternOperation recursive => [(value, recursive.MatchedType, TypeTest, pattern.Syntax)],

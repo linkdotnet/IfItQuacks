@@ -3,7 +3,7 @@ using Microsoft.CodeAnalysis.CSharp;
 
 namespace IfItQuacks.Generator;
 
-internal static class Utilities
+internal static class SourceSyntax
 {
     public static string AccessibilityKeyword(Accessibility a) => a switch
     {
@@ -46,22 +46,12 @@ internal static class Utilities
     public static string Parameter(IParameterSymbol parameter, string type) =>
         $"{(parameter.IsParams ? "params " : "")}{RefKindPrefix(parameter.RefKind)}{type} {Identifier(parameter.Name)}";
 
+    // An extension method's first parameter keeps its 'this', so a generated overload can still be called on a receiver.
+    public static string DeclareParameter(IMethodSymbol method, IParameterSymbol parameter, string type) =>
+        (method.IsExtensionMethod && parameter.Ordinal == 0 ? "this " : "") + Parameter(parameter, type);
+
     public static string Argument(IParameterSymbol parameter) =>
         $"{RefKindArgumentPrefix(parameter.RefKind)}{Identifier(parameter.Name)}";
-
-    public static IEnumerable<INamedTypeSymbol> EnclosingTypes(INamedTypeSymbol type)
-    {
-        for (var t = type; t is not null; t = t.ContainingType)
-            yield return t;
-    }
-
-    public static bool ContainsType(ITypeSymbol type, Func<ITypeSymbol, bool> predicate) =>
-        predicate(type) || type switch
-        {
-            INamedTypeSymbol named => named.TypeArguments.Any(t => ContainsType(t, predicate)),
-            IArrayTypeSymbol array => ContainsType(array.ElementType, predicate),
-            _ => false,
-        };
 
     public static string DefaultValue(IParameterSymbol parameter)
     {

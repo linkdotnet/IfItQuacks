@@ -9,7 +9,7 @@ internal static class ShapeMatcher
         if (concreteType.DelegateInvokeMethod is { } invoke)
             return FindDelegateMismatch(shape, invoke, compilation);
 
-        var mapped = MappedShapeEmitter.TryGetInfo(shape);
+        var mapped = MappedShape.TryGet(shape);
         foreach (var member in GetShapeMembers(shape).Where(IsRequired))
         {
             var mismatch = FindMemberMismatch(concreteType, member, compilation, mapped);
@@ -24,20 +24,25 @@ internal static class ShapeMatcher
             .FirstOrDefault(m => IsUnsupported(m) && !(allowGenericMethods && m is IMethodSymbol { IsGenericMethod: true, IsStatic: false }));
 
     /// <summary>The interface members <paramref name="concreteType"/> does not provide, which a stub implements by throwing.</summary>
-    public static IEnumerable<ISymbol> FindUnimplementedMembers(INamedTypeSymbol shape, INamedTypeSymbol concreteType, Compilation compilation) =>
-        GetShapeMembers(shape).Where(IsRequired)
-            .Where(m => FindCounterpart(m, concreteType, compilation, MappedShapeEmitter.TryGetInfo(shape)) is null);
+    public static IEnumerable<ISymbol> FindUnimplementedMembers(INamedTypeSymbol shape, INamedTypeSymbol concreteType, Compilation compilation)
+    {
+        var mapped = MappedShape.TryGet(shape);
+        return GetShapeMembers(shape).Where(IsRequired).Where(m => FindCounterpart(m, concreteType, compilation, mapped) is null);
+    }
 
     // A stub fills in what is missing; a member that is there but doesn't fit is a mistake, not an omission.
-    public static string? FindStubMismatch(INamedTypeSymbol shape, INamedTypeSymbol concreteType, Compilation compilation) =>
-        FindUnimplementedMembers(shape, concreteType, compilation)
+    public static string? FindStubMismatch(INamedTypeSymbol shape, INamedTypeSymbol concreteType, Compilation compilation)
+    {
+        var mapped = MappedShape.TryGet(shape);
+        return FindUnimplementedMembers(shape, concreteType, compilation)
             .Where(m => GetAllMembers(concreteType).Any(c => c.Name == m.Name && IsPublicInstance(c)))
-            .Select(m => FindMemberMismatch(concreteType, m, compilation, MappedShapeEmitter.TryGetInfo(shape)))
+            .Select(m => FindMemberMismatch(concreteType, m, compilation, mapped))
             .FirstOrDefault(mismatch => mismatch is not null);
+    }
 
     public static IEnumerable<ISymbol> GetShapeMembers(INamedTypeSymbol shape) =>
         // A [DuckShape<>] interface is still empty here, because a generator can't see another's output.
-        MappedShapeEmitter.TryGetInfo(shape) is { } mapped
+        MappedShape.TryGet(shape) is { } mapped
             ? mapped.Members
             : shape.GetMembers()
                 .Concat(shape.AllInterfaces.SelectMany(i => i.GetMembers()))
@@ -50,7 +55,7 @@ internal static class ShapeMatcher
         member.IsAbstract || member.ContainingType.TypeKind != TypeKind.Interface;
 
     public static ISymbol? FindCounterpart(ISymbol member, INamedTypeSymbol concreteType, Compilation compilation,
-        MappedShapeEmitter.Info? mapped = null)
+        MappedShape? mapped = null)
     {
         // A delegate has no member named like the interface method; its Invoke stands in for it.
         if (concreteType.DelegateInvokeMethod is { } invoke)
@@ -60,7 +65,7 @@ internal static class ShapeMatcher
     }
 
     private static ISymbol? FindNamedCounterpart(ISymbol member, INamedTypeSymbol concreteType, Compilation compilation,
-        MappedShapeEmitter.Info? mapped = null) => member switch
+        MappedShape? mapped = null) => member switch
     {
         IMethodSymbol method => FindMethod(concreteType, method, compilation) ?? FindDelegateMember(concreteType, method, compilation),
         IPropertySymbol property => GetAllMembers(concreteType).FirstOrDefault(m => IsPropertyMatch(m, property, compilation, mapped)),
@@ -112,7 +117,7 @@ internal static class ShapeMatcher
     };
 
     private static string? FindMemberMismatch(INamedTypeSymbol concreteType, ISymbol member, Compilation compilation,
-        MappedShapeEmitter.Info? mapped = null)
+        MappedShape? mapped = null)
     {
         if (FindCounterpart(member, concreteType, compilation, mapped) is not null)
             return null;
@@ -173,11 +178,11 @@ internal static class ShapeMatcher
                                  IsDelegateMatch(shapeMethod, invoke, compilation));
 
     /// <summary>Under <c>Readonly</c> the derived member has no setter, so no counterpart needs one either.</summary>
-    private static bool NeedsSetter(IPropertySymbol shapeProperty, MappedShapeEmitter.Info? mapped) =>
-        shapeProperty.SetMethod is not null && (mapped is null || MappedShapeEmitter.KeepsSetter(shapeProperty, mapped));
+    private static bool NeedsSetter(IPropertySymbol shapeProperty, MappedShape? mapped) =>
+        shapeProperty.SetMethod is not null && (mapped is null || mapped.KeepsSetter(shapeProperty));
 
     private static bool IsPropertyMatch(ISymbol candidate, IPropertySymbol shapeProperty, Compilation compilation,
-        MappedShapeEmitter.Info? mapped = null) => candidate switch
+        MappedShape? mapped = null) => candidate switch
     {
         IPropertySymbol property =>
             property.Name == shapeProperty.Name &&
@@ -198,10 +203,10 @@ internal static class ShapeMatcher
 
     // Reading is covariant and writing contravariant, so a property with both accessors needs a type convertible in both directions.
     private static bool IsValueMatch(ITypeSymbol candidateType, IPropertySymbol shapeProperty, Compilation compilation,
-        MappedShapeEmitter.Info? mapped = null)
+        MappedShape? mapped = null)
     {
         // Under 'Optional' the derived member is declared nullable, so that is what a counterpart has to fit.
-        var shapeType = MappedShapeEmitter.OptionalType(shapeProperty, shapeProperty.Type, mapped, compilation);
+        var shapeType = MappedShape.OptionalType(shapeProperty, shapeProperty.Type, mapped, compilation);
         return (shapeProperty.GetMethod is null || IsAssignable(candidateType, shapeType, compilation)) &&
                (!NeedsSetter(shapeProperty, mapped) || IsAssignable(shapeType, candidateType, compilation));
     }

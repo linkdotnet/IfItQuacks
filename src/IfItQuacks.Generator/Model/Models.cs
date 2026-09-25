@@ -19,7 +19,7 @@ internal sealed record DuckMethodRef(string Name, string ContainingType, bool Is
 
     public static string MetadataName(INamedTypeSymbol type)
     {
-        var nested = string.Join("+", Utilities.EnclosingTypes(type).Reverse().Select(t => t.MetadataName));
+        var nested = string.Join("+", type.EnclosingTypes().Reverse().Select(t => t.MetadataName));
         return type.ContainingNamespace.IsGlobalNamespace ? nested : type.ContainingNamespace.ToDisplayString() + "." + nested;
     }
 }
@@ -29,7 +29,16 @@ internal sealed record CallSiteOutput(
     EquatableArray<GeneratedFile> Adapters,
     OverloadMember? Overload,
     EquatableArray<Diagnostic> Diagnostics,
-    EquatableArray<OverloadMember> NestedAdapters = default);
+    EquatableArray<OverloadMember> NestedAdapters = default)
+{
+    public IEnumerable<OverloadMember> OverloadMembers => Overload is null ? NestedAdapters : NestedAdapters.Prepend(Overload);
+
+    public static CallSiteOutput ForInterceptor(string interceptor, GeneratedFile generated) =>
+        new(interceptor, new EquatableArray<GeneratedFile>([generated]), null, default);
+
+    public static CallSiteOutput ForDiagnostics(IEnumerable<Diagnostic> diagnostics) =>
+        new(null, default, null, new EquatableArray<Diagnostic>([.. diagnostics]));
+}
 
 // A sequence argument needs the wrapper and the adapter for its elements.
 // An adapter for a type only its containing type can name is nested in that type instead of going into the Files.
