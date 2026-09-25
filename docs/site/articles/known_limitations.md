@@ -24,6 +24,21 @@ The fallback is the generated overload that accepts anything and casts at runtim
 
 One call shape can't be redirected at all: `base.Greet(duck)` invokes the method non-virtually, which neither an interceptor nor the fallback can reproduce, so it is reported with [`IFITQUACKS008`](diagnostics.md#ifitquacks008).
 
+## Types generated code can't name
+
+Adapters and interceptors live in their own namespace, so the argument's type has to be accessible to the whole assembly. A `private`, `protected` or `private protected` nested type, or a `file`-local type, is reported with [`IFITQUACKS013`](diagnostics.md#ifitquacks013); declaring it `internal` is enough.
+
+```csharp
+public class Host
+{
+    private class Hidden { public string Name => "hidden"; }
+    internal class Visible { public string Name => "visible"; }
+
+    static string A() => Ops.Greet(new Visible());  // works
+    static string B() => Ops.Greet(new Hidden());   // IFITQUACKS013
+}
+```
+
 ## Matching uses the static type
 
 The generator only sees the type the compiler wrote down at the call site.

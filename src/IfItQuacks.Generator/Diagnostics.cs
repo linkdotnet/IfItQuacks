@@ -103,4 +103,14 @@ internal static class Diagnostics
                      "for a duck-typed constraint the type argument is the adapter type itself. A cast, 'as' or type pattern for the original type therefore " +
                      "fails for these calls, while it succeeds for arguments implementing the interface. Conversion operators can't help: the compiler only " +
                      "sees the interface or type parameter. 'Duck.Unwrap' returns the original instance in both cases.");
+
+    public static readonly DiagnosticDescriptor InaccessibleType = new(
+        id: "IFITQUACKS013",
+        title: "Type is not accessible to generated code",
+        messageFormat: "Type '{0}' cannot be duck-typed to '{1}': '{2}' is {3}, so the generated code can't name it; declare it 'internal' or 'public'",
+        category: "IfItQuacks",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Adapters and interceptors are generated outside the types of your code, so they can only use types the whole assembly can access. " +
+                     "A private, protected or private protected nested type, or a file-local type, can't be named there.");
 }

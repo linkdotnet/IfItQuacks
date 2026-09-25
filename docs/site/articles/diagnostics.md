@@ -42,6 +42,7 @@ Reported when
 - a base type has an accessible method of the same name, which the generated fallback would hide (overload resolution ignores a base type's methods once one of the derived type applies, so `OverloadResolutionPriorityAttribute` can't help); this includes the methods of `object`, e.g. a `[DuckTyped]` method named `Equals`,
 - the method is overloaded by a regular method of the same name, but the project uses a language version below C# 13, which is needed for `OverloadResolutionPriorityAttribute` to keep the generated fallback from taking that overload's calls (on .NET 8, set `<LangVersion>13</LangVersion>`),
 - the containing type is an interface or a `file`-local type,
+- its signature uses a type that isn't accessible to the whole assembly, e.g. a `private` nested interface, or a non-generic method is declared in such a type; the generated interceptors and forwarder can't name it (see [`IFITQUACKS013`](#ifitquacks013)),
 - a type parameter of a generic method is not used by any interface parameter (it can't be inferred), or
 - the method mixes interface parameters with [duck-typed constraints](getting_started.md#static-members-and-operators), or not all of its type parameters have a single interface constraint used by a parameter.
 
@@ -155,3 +156,22 @@ Duck.Unwrap(named) is Person p ? p.Nickname : named.Name;
 ```
 
 Casts and type tests for interfaces and type parameters are not reported, because the adapter may implement those.
+
+## IFITQUACKS013
+
+**Type is not accessible to generated code**
+
+Adapters and interceptors are generated in their own namespace, outside your types, so they can only name types the whole assembly can access. A `private`, `protected` or `private protected` nested type, a type nested in one, and a `file`-local type can't be named there. This is reported for the argument of a `[DuckTyped]` call, a method group, a duck-typed constraint, `Duck.As`, `Duck.Stub`, `Duck.Merge` and `Duck.To`, including element types of sequences like `List<Hidden>`, and for an inaccessible interface or `Duck.To` target.
+
+```csharp
+public class Host
+{
+    private class Hidden { public string Name => "hidden"; }
+
+    public static string Run() => Ops.Greet(new Hidden()); // error IFITQUACKS013: Type 'Host.Hidden' cannot be duck-typed to 'INamed':
+                                                           // 'Host.Hidden' is private, so the generated code can't name it;
+                                                           // declare it 'internal' or 'public'
+}
+```
+
+Declare the type `internal`, or make it implement the interface. An argument implementing the interface itself needs no adapter, so it is only reported where a generated signature names it, e.g. next to an argument that is adapted.

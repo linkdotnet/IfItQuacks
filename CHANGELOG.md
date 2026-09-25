@@ -6,6 +6,15 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 ## [Unreleased]
 
+### Added
+
+- `IFITQUACKS013` reports an argument whose type generated code can't name: a `private`, `protected` or
+  `private protected` nested type, a type nested in one, or a `file`-local type. Such arguments failed the build with
+  `CS0122` in generated code for `[DuckTyped]` calls, method groups, duck-typed constraints, sequences, `Duck.As`,
+  `Duck.Stub`, `Duck.Merge` and `Duck.To`. An inaccessible interface or `Duck.To` target is reported the same way, and a
+  `[DuckTyped]` method whose signature uses such a type, or a non-generic one declared in such a type, with
+  `IFITQUACKS004`.
+
 ## [v1.5.2] - 2026-09-24
 
 ### Fixed

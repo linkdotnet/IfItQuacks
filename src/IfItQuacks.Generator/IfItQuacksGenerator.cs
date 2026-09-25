@@ -208,6 +208,16 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             return false;
         }
 
+        // Interceptors call a non-generic method from their own namespace, and they and the forwarder of a non-public method repeat its signature there.
+        if (((method.IsGenericMethod ? null : FindInaccessibleType(method.ContainingType, compilation)) ??
+             method.Parameters.Select(p => p.Type).Prepend(method.ReturnType)
+                 .Select(t => FindInaccessibleType(t, compilation)).FirstOrDefault(t => t is not null)) is { } inaccessible)
+        {
+            diagnostics?.Add(Diagnostic.Create(Diagnostics.UnsupportedSignature, location, method.Name,
+                $"it uses '{inaccessible.ToDisplayString()}', which is {AccessibilityDescription(inaccessible)}, so the generated code can't name it"));
+            return false;
+        }
+
         if (method.ContainingType.GetMembers(method.Name).OfType<IMethodSymbol>().Count(IsDuckTyped) > 1)
         {
             diagnostics?.Add(Diagnostic.Create(Diagnostics.UnsupportedSignature, location, method.Name,
@@ -463,6 +473,13 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
                     CreateDuckOverload(duckMethod, targetMethod, resolved), default);
         }
 
+        // The interceptor's signature names every argument type, including those passed through without an adapter.
+        diagnostics.AddRange(resolved
+            .Select(r => FindInaccessibleTypeDiagnostic(arguments[r.Key].GetLocation(), r.Value.ConcreteType, duckMethod.Parameters[r.Key].Type, compilation))
+            .OfType<Diagnostic>());
+        if (diagnostics.Count > 0)
+            return DiagnosticsOnly(diagnostics);
+
         var location = semanticModel.GetInterceptableLocation(invocation, ct);
         if (location is null)
             return null;
@@ -498,6 +515,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         var targets = overloadArguments.ToDictionary(a => a.Value, a => overload.Parameters[a.Key]);
         var duckParameters = GetDuckParameters(duckMethod);
         var adapted = new List<(IParameterSymbol Parameter, ExpressionSyntax Expression, INamedTypeSymbol Shape, ITypeSymbol ConcreteType)>();
+        var inaccessible = new List<Diagnostic>();
         foreach (var argument in arguments)
         {
             var parameter = duckMethod.Parameters[argument.Key];
@@ -515,9 +533,16 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
                 continue;
 
             if (argumentType.TypeKind == TypeKind.Error || argumentType.IsAnonymousType || ContainsAnyTypeParameter(argumentType) ||
-                !IsMoreSpecific(shape, targets[expression].Type, compilation) ||
-                VerifyArgument(expression, shape, argumentType, compilation, out _) is not null)
+                !IsMoreSpecific(shape, targets[expression].Type, compilation))
                 return null;
+
+            // A mismatch keeps the call on the overload it binds to, but an inaccessible type would have been redirected if it could be named.
+            if (VerifyArgument(expression, shape, argumentType, compilation, out _) is { } diagnostic)
+            {
+                if (diagnostic.Descriptor != Diagnostics.InaccessibleType)
+                    return null;
+                inaccessible.Add(diagnostic);
+            }
 
             adapted.Add((parameter, expression, shape, argumentType));
         }
@@ -531,6 +556,9 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         if (semanticModel.GetSpeculativeSymbolInfo(invocation.SpanStart, speculative, SpeculativeBindingOption.BindAsExpression).Symbol is not IMethodSymbol picked ||
             !SymbolEqualityComparer.Default.Equals(picked.OriginalDefinition, duckMethod))
             return null;
+
+        if (inaccessible.Count > 0)
+            return DiagnosticsOnly(inaccessible);
 
         var location = semanticModel.GetInterceptableLocation(invocation, ct);
         if (location is null)
@@ -603,6 +631,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             invoke.Parameters.Length != duckMethod.Parameters.Length)
             return null;
 
+        var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
         var adapters = ImmutableArray.CreateBuilder<GeneratedFile>();
         var resolved = new Dictionary<int, (ITypeSymbol ConcreteType, string? AdapterName)>();
         foreach (var parameter in GetDuckParameters(duckMethod))
@@ -613,13 +642,24 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
                 continue;
 
             var shape = (INamedTypeSymbol)WithoutNullability(parameter.Type);
-            if (VerifyArgument(expression, shape, concreteType, compilation, out var implementsDirectly) is not null || implementsDirectly)
+            // A mismatch is left to the runtime check of the generic fallback, but an adapter for an inaccessible type can't be generated at all.
+            if (VerifyArgument(expression, shape, concreteType, compilation, out var implementsDirectly) is { } diagnostic)
+            {
+                if (diagnostic.Descriptor == Diagnostics.InaccessibleType)
+                    diagnostics.Add(diagnostic);
+                continue;
+            }
+
+            if (implementsDirectly)
                 continue;
 
             var adapter = CreateAdapter(shape, concreteType, compilation);
             adapters.AddRange(adapter.Files);
             resolved[parameter.Ordinal] = (concreteType, adapter.Name);
         }
+
+        if (diagnostics.Count > 0)
+            return DiagnosticsOnly(diagnostics);
 
         return resolved.Count == 0
             ? null
@@ -699,6 +739,12 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             {
                 diagnostics.Add(Diagnostic.Create(Diagnostics.UnsupportedStructArgument, location, concreteType.ToDisplayString(),
                     shape.ToDisplayString(), unsupportedStruct));
+                continue;
+            }
+
+            if (FindInaccessibleTypeDiagnostic(location, concreteType, shape, compilation) is { } inaccessible)
+            {
+                diagnostics.Add(inaccessible);
                 continue;
             }
 
@@ -877,6 +923,9 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
                     argumentType.ToDisplayString(), shape.ToDisplayString(), mismatch)]);
             }
 
+            if (FindInaccessibleTypeDiagnostic(argExpr.GetLocation(), argumentType, shape, compilation) is { } inaccessible)
+                return DiagnosticsOnly([inaccessible]);
+
             return CreateStubCallSite(semanticModel, invocation, shape, argumentType, ct);
         }
 
@@ -942,6 +991,9 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
                     sourceType.ToDisplayString(), shape.ToDisplayString(), unnameable)]);
             }
 
+            if (FindInaccessibleTypeDiagnostic(argument.GetLocation(), sourceType, shape, compilation) is { } inaccessible)
+                return DiagnosticsOnly([inaccessible]);
+
             sources.Add(sourceType);
         }
 
@@ -996,6 +1048,9 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             return DiagnosticsOnly([Diagnostic.Create(Diagnostics.UnsupportedConversionTarget, invocation.GetLocation(),
                 target.ToDisplayString(), source.ToDisplayString(), mismatch)]);
         }
+
+        if (FindInaccessibleTypeDiagnostic(argExpr.GetLocation(), source, target, compilation) is { } inaccessible)
+            return DiagnosticsOnly([inaccessible]);
 
         var location = semanticModel.GetInterceptableLocation(invocation, ct);
         if (location is null)
@@ -1140,7 +1195,8 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             return null;
 
         if (SequenceAdapterEmitter.TryMatch(shape, argumentType, compilation) is { } match)
-            return VerifySequenceArgument(argExpr, shape, argumentType, match);
+            return VerifySequenceArgument(argExpr, shape, argumentType, match) ??
+                   FindInaccessibleTypeDiagnostic(argExpr.GetLocation(), argumentType, shape, compilation);
 
         if (FindUnsupportedMemberDiagnostic(argExpr, shape) is { } unsupported)
             return unsupported;
@@ -1160,7 +1216,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
 
         var unsupportedStructKind = GetUnsupportedStructKind(concreteType, implementsDirectly);
         return unsupportedStructKind is null
-            ? null
+            ? FindInaccessibleTypeDiagnostic(argExpr.GetLocation(), concreteType, shape, compilation)
             : Diagnostic.Create(Diagnostics.UnsupportedStructArgument, argExpr.GetLocation(),
                 concreteType.ToDisplayString(), shape.ToDisplayString(), unsupportedStructKind);
     }
@@ -1188,6 +1244,28 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         type.IsAnonymousType && AdapterEmitter.FindUnnameableProperty(type) is { } property
             ? $"property '{property}' has a type that contains an anonymous type"
             : null;
+
+    // Adapters and interceptors live in their own namespace, so every type they name must be accessible to the whole assembly.
+    private static Diagnostic? FindInaccessibleTypeDiagnostic(Location location, ITypeSymbol type, ITypeSymbol shape, Compilation compilation) =>
+        (FindInaccessibleType(type, compilation) ?? FindInaccessibleType(shape, compilation)) is { } inaccessible
+            ? Diagnostic.Create(Diagnostics.InaccessibleType, location, type.ToDisplayString(), shape.ToDisplayString(), inaccessible.ToDisplayString(),
+                AccessibilityDescription(inaccessible))
+            : null;
+
+    private static string AccessibilityDescription(INamedTypeSymbol type) =>
+        type.IsFileLocal ? "file-local" : Utilities.AccessibilityKeyword(type.DeclaredAccessibility);
+
+    // The outermost type is checked first, so a public type nested in a private one reports the private one.
+    private static INamedTypeSymbol? FindInaccessibleType(ITypeSymbol type, Compilation compilation) => type switch
+    {
+        IArrayTypeSymbol array => FindInaccessibleType(array.ElementType, compilation),
+        INamedTypeSymbol named => Utilities.EnclosingTypes(named).Reverse()
+            .Select(t => t.IsFileLocal || !compilation.IsSymbolAccessibleWithin(t.OriginalDefinition, compilation.Assembly)
+                ? t
+                : t.TypeArguments.Select(a => FindInaccessibleType(a, compilation)).FirstOrDefault(f => f is not null))
+            .FirstOrDefault(f => f is not null),
+        _ => null,
+    };
 
     private static Diagnostic? FindUnsupportedMemberDiagnostic(ExpressionSyntax argExpr, INamedTypeSymbol shape) =>
         ShapeMatcher.FindUnsupportedMember(shape) is { } member
