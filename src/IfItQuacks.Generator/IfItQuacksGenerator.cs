@@ -235,6 +235,15 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             return false;
         }
 
+        // Inside the derived type the generated fallback hides the overridden method, so it is called through the base type, which protected access forbids.
+        if (method.IsOverride && !compilation.IsSymbolAccessibleWithin(OverriddenRoot(method), method.ContainingType, OverriddenRoot(method).ContainingType))
+        {
+            diagnostics?.Add(Diagnostic.Create(Diagnostics.UnsupportedSignature, location, method.Name,
+                $"it overrides the protected '{OverriddenRoot(method).ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}', " +
+                "which its generated fallback can't call without calling itself"));
+            return false;
+        }
+
         // Overload resolution drops a base type's methods once a method of the derived type applies, whatever its priority,
         // so the generated fallback would take the inherited method's calls and throw at runtime.
         if (!method.IsGenericMethod && FindInheritedOverload(method, compilation) is { } inherited)
@@ -320,6 +329,11 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
 
         var candidate = candidates
             .FirstOrDefault(c => (c.ReducedFrom ?? c).OriginalDefinition is { DeclaringSyntaxReferences.Length: > 0 } d && IsDuckTyped(d));
+        if (candidate is null && candidates.Length > 0)
+        {
+            var receiverType = GetReceiverType(semanticModel, invocation, ct);
+            candidate = candidates.Select(c => FindDuckTypedInHierarchy(c, receiverType)).FirstOrDefault(m => m is not null);
+        }
         var isReduced = candidate?.MethodKind == MethodKind.ReducedExtension;
         if (candidate is null && FindExtensionCandidate(invocation, duckMethods, compilation) is { } extension)
         {
@@ -436,11 +450,15 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         }
 
         var adapters = ImmutableArray.CreateBuilder<GeneratedFile>();
+        var nestedAdapters = ImmutableArray.CreateBuilder<OverloadMember>();
         var resolved = new Dictionary<int, (ITypeSymbol ConcreteType, string? AdapterName)>(passedThrough);
         foreach (var (parameter, expression, concreteType) in duckArguments)
         {
             var shape = (INamedTypeSymbol)WithoutNullability(targetMethod.Parameters[parameter.Ordinal].Type);
-            if (VerifyArgument(expression, shape, concreteType, compilation, out var implementsDirectly) is { } diagnostic)
+            var diagnostic = VerifyArgument(expression, shape, concreteType, compilation, out var implementsDirectly);
+            if (diagnostic is null && !implementsDirectly)
+                diagnostic = FindInaccessibleType(expression, shape, concreteType, allowNested: !duckMethod.IsGenericMethod);
+            if (diagnostic is not null)
             {
                 diagnostics.Add(diagnostic);
                 continue;
@@ -448,8 +466,12 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
 
             var adapter = implementsDirectly ? null : CreateAdapter(shape, concreteType, compilation);
             if (adapter is not null)
+            {
                 adapters.AddRange(adapter.Files);
-            resolved[parameter.Ordinal] = (concreteType, adapter?.Name);
+                if (adapter.Nested is not null)
+                    nestedAdapters.Add(adapter.Nested);
+            }
+            resolved[parameter.Ordinal] = (concreteType, adapter?.Reference);
         }
 
         if (diagnostics.Count > 0)
@@ -468,7 +490,8 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             return null;
 
         return new CallSiteOutput(CreateInterceptor(location, duckMethod, resolved, isReduced),
-            new EquatableArray<GeneratedFile>(adapters.ToImmutable()), null, default);
+            new EquatableArray<GeneratedFile>(adapters.ToImmutable()), null, default,
+            new EquatableArray<OverloadMember>(nestedAdapters.ToImmutable()));
     }
 
     private static IMethodSymbol? FindOverloadedDuckMethod(IMethodSymbol bound, Compilation compilation) =>
@@ -514,7 +537,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             if (argumentType is null || compilation.ClassifyCommonConversion(argumentType, shape) is { IsImplicit: true, IsUserDefined: false })
                 continue;
 
-            if (argumentType.TypeKind == TypeKind.Error || argumentType.IsAnonymousType || ContainsAnyTypeParameter(argumentType) ||
+            if (argumentType.TypeKind == TypeKind.Error || argumentType.IsAnonymousType || !IsNameable(argumentType) || ContainsAnyTypeParameter(argumentType) ||
                 !IsMoreSpecific(shape, targets[expression].Type, compilation) ||
                 VerifyArgument(expression, shape, argumentType, compilation, out _) is not null)
                 return null;
@@ -542,7 +565,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         {
             var adapter = CreateAdapter(shape, concreteType, compilation);
             adapters.AddRange(adapter.Files);
-            adapterNames[parameter.Ordinal] = (concreteType, adapter.Name);
+            adapterNames[parameter.Ordinal] = (concreteType, adapter.Reference);
         }
 
         string Value(IParameterSymbol parameter, IParameterSymbol target)
@@ -550,7 +573,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             var name = Utilities.Identifier(target.Name);
             var shape = $"global::{WithoutNullability(parameter.Type).ToDisplayString()}";
             if (adapterNames.TryGetValue(parameter.Ordinal, out var duck))
-                return $"({shape})(new global::{GeneratedNamespace}.{duck.AdapterName}(({duck.ConcreteType.ToDisplayString()})(object){name}!))";
+                return $"({shape})(new {duck.AdapterName}(({duck.ConcreteType.ToDisplayString()})(object){name}!))";
 
             return duckParameters.Contains(parameter, SymbolEqualityComparer.Default) ? $"({shape})(object){name}!" : Utilities.Argument(target);
         }
@@ -608,7 +631,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         foreach (var parameter in GetDuckParameters(duckMethod))
         {
             if (invoke.Parameters[parameter.Ordinal].Type is not INamedTypeSymbol concreteType ||
-                concreteType.TypeKind == TypeKind.Error || ContainsAnyTypeParameter(concreteType) ||
+                concreteType.TypeKind == TypeKind.Error || ContainsAnyTypeParameter(concreteType) || !IsNameable(concreteType) ||
                 SymbolEqualityComparer.Default.Equals(concreteType, parameter.Type))
                 continue;
 
@@ -618,7 +641,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
 
             var adapter = CreateAdapter(shape, concreteType, compilation);
             adapters.AddRange(adapter.Files);
-            resolved[parameter.Ordinal] = (concreteType, adapter.Name);
+            resolved[parameter.Ordinal] = (concreteType, adapter.Reference);
         }
 
         return resolved.Count == 0
@@ -662,6 +685,12 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             }
 
             var location = argumentTypes[0].Expression.GetLocation();
+            if (FindInaccessibleType(argumentTypes[0].Expression, shape, concreteType, allowNested: false) is { } inaccessible)
+            {
+                diagnostics.Add(inaccessible);
+                continue;
+            }
+
             // The overload names the argument's type in its signature, which an anonymous type has no name for.
             if (concreteType.IsAnonymousType)
             {
@@ -729,6 +758,12 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
 
             if (implementsDirectly)
                 continue;
+
+            if (FindInaccessibleType(expression, shape, argumentType, allowNested: false) is { } inaccessible)
+            {
+                diagnostics.Add(inaccessible);
+                continue;
+            }
 
             if (argumentType is not INamedTypeSymbol { IsAnonymousType: false } named)
             {
@@ -871,6 +906,9 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
                     argumentType.ToDisplayString(), shape.ToDisplayString(), unnameable)]);
             }
 
+            if (FindInaccessibleType(argExpr, shape, argumentType, allowNested: false) is { } inaccessible)
+                return DiagnosticsOnly([inaccessible]);
+
             if (ShapeMatcher.FindStubMismatch(shape, argumentType, compilation) is { } mismatch)
             {
                 return DiagnosticsOnly([Diagnostic.Create(Diagnostics.ShapeMismatch, argExpr.GetLocation(),
@@ -942,6 +980,9 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
                     sourceType.ToDisplayString(), shape.ToDisplayString(), unnameable)]);
             }
 
+            if (FindInaccessibleType(argument.Expression, shape, sourceType, allowNested: false) is { } inaccessible)
+                return DiagnosticsOnly([inaccessible]);
+
             sources.Add(sourceType);
         }
 
@@ -989,6 +1030,12 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         {
             return DiagnosticsOnly([Diagnostic.Create(Diagnostics.UnsupportedConversionTarget, invocation.GetLocation(),
                 target.ToDisplayString(), source.ToDisplayString(), unnameable)]);
+        }
+
+        if (!IsNameable(source))
+        {
+            return DiagnosticsOnly([Diagnostic.Create(Diagnostics.UnsupportedConversionTarget, invocation.GetLocation(),
+                target.ToDisplayString(), source.ToDisplayString(), InaccessibleReason)]);
         }
 
         if (StructuralCopyEmitter.FindMismatch(target, source, compilation) is { } mismatch)
@@ -1042,19 +1089,23 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         if (VerifyArgument(argExpr, shape, concreteType, semanticModel.Compilation, out var implementsDirectly) is { } diagnostic)
             return DiagnosticsOnly([diagnostic]);
 
+        if (!implementsDirectly && FindInaccessibleType(argExpr, shape, concreteType, allowNested: true) is { } inaccessible)
+            return DiagnosticsOnly([inaccessible]);
+
         var location = semanticModel.GetInterceptableLocation(invocation, ct);
         if (location is null)
             return null;
 
         var shapeTypeName = shape.ToDisplayString();
         var adapter = implementsDirectly ? null : CreateAdapter(shape, concreteType, semanticModel.Compilation);
-        var argument = concreteType.IsAnonymousType ? "value" : $"({concreteType.ToDisplayString()})value";
-        var result = adapter is null ? "value" : $"new global::{GeneratedNamespace}.{adapter.Name}({argument})";
+        var argument = concreteType.IsAnonymousType || !IsNameable(concreteType) ? "value" : $"({concreteType.ToDisplayString()})value";
+        var result = adapter is null ? "value" : $"new {adapter.Reference}({argument})";
 
         var interceptor = ConversionInterceptor(location, $"global::{shapeTypeName}", "object value", $"(global::{shapeTypeName})({result})");
 
         return new CallSiteOutput(interceptor,
-            adapter is null ? default : new EquatableArray<GeneratedFile>(adapter.Files), null, default);
+            adapter is null ? default : new EquatableArray<GeneratedFile>(adapter.Files), null, default,
+            adapter?.Nested is { } nested ? new EquatableArray<OverloadMember>([nested]) : default);
     }
 
     // The value an extension method's first parameter is bound to, e.g. 'person' in 'person.Describe()' or 'person?.Describe()'.
@@ -1206,12 +1257,51 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             var element = new GeneratedFile(elementName, AdapterEmitter.Emit(match.ElementShape, match.SourceElement, elementName, compilation));
             var sequenceName = SequenceAdapterEmitter.GetAdapterName(shape, concreteType);
             var sequence = new GeneratedFile(sequenceName, SequenceAdapterEmitter.Emit(shape, concreteType, match, elementName, sequenceName));
-            return new AdapterSet(sequenceName, [sequence, element]);
+            return new AdapterSet(sequenceName, [sequence, element], $"global::{GeneratedNamespace}.{sequenceName}");
         }
 
         var named = (INamedTypeSymbol)concreteType;
         var name = AdapterEmitter.GetAdapterName(shape, named);
-        return new AdapterSet(name, [new GeneratedFile(name, AdapterEmitter.Emit(shape, named, name, compilation))]);
+        if (GetAdapterHost(named) is { } host)
+        {
+            var (prefix, suffix) = TypeWrapper.WrapTemplate(host);
+            var nested = new OverloadMember($"IfItQuacks.Adapters.{SanitizeHintName(host.ToDisplayString())}.g.cs", Header + prefix, suffix,
+                AdapterEmitter.Emit(shape, named, name, compilation, takesObject: true).Trim());
+            return new AdapterSet(name, [], $"global::{host.ToDisplayString()}.{name}", nested);
+        }
+
+        return new AdapterSet(name, [new GeneratedFile(name, AdapterEmitter.Emit(shape, named, name, compilation))], $"global::{GeneratedNamespace}.{name}");
+    }
+
+    private const string InaccessibleReason = "it is not accessible from generated code";
+
+    // Generated code outside a type can't name its private or protected nested types, unless the adapter is nested in that type too.
+    private static bool IsNameable(ITypeSymbol type) => type switch
+    {
+        INamedTypeSymbol named => Utilities.EnclosingTypes(named).All(t => t.IsAnonymousType ||
+                                      t.DeclaredAccessibility is Accessibility.Public or Accessibility.Internal or Accessibility.ProtectedOrInternal) &&
+                                  named.TypeArguments.All(IsNameable),
+        IArrayTypeSymbol array => IsNameable(array.ElementType),
+        _ => true,
+    };
+
+    private static INamedTypeSymbol? GetAdapterHost(ITypeSymbol type) =>
+        type is INamedTypeSymbol { ContainingType: { } host } named && !IsNameable(named) && IsNameable(host) &&
+        named.TypeArguments.All(IsNameable) && !IsInGenericType(host) && !IsInFileLocalType(host) &&
+        Utilities.EnclosingTypes(host).All(t => t.DeclaringSyntaxReferences.Length > 0 && t.DeclaringSyntaxReferences
+            .Select(r => r.GetSyntax()).OfType<TypeDeclarationSyntax>().All(d => d.Modifiers.Any(SyntaxKind.PartialKeyword)))
+            ? host
+            : null;
+
+    private static Diagnostic? FindInaccessibleType(ExpressionSyntax expression, INamedTypeSymbol shape, ITypeSymbol type, bool allowNested)
+    {
+        if (IsNameable(type) || (allowNested && GetAdapterHost(type) is not null))
+            return null;
+
+        var reason = allowNested && type is INamedTypeSymbol { ContainingType: { } host } && IsNameable(host)
+            ? $"{InaccessibleReason}; declare '{host.Name}' and its containing types 'partial' to nest the adapter in it"
+            : InaccessibleReason;
+        return Diagnostic.Create(Diagnostics.ShapeMismatch, expression.GetLocation(), type.ToDisplayString(), shape.ToDisplayString(), reason);
     }
 
     private static ImmutableArray<IParameterSymbol> GetDuckParameters(IMethodSymbol method) =>
@@ -1294,7 +1384,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             foreach (var adapter in site.Adapters)
                 adapters[adapter.Name] = adapter.Source;
 
-            if (site.Overload is { } overload)
+            foreach (var overload in site.NestedAdapters.Prepend(site.Overload).OfType<OverloadMember>())
             {
                 if (!overloadFiles.TryGetValue(overload.FileName, out var file))
                     overloadFiles[overload.FileName] = file = (overload, new SortedSet<string>(StringComparer.Ordinal));
@@ -1356,12 +1446,62 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         for (var type = method.ContainingType.BaseType; type is not null; type = type.BaseType)
         {
             if (type.GetMembers(method.Name).OfType<IMethodSymbol>().FirstOrDefault(m =>
-                    m.MethodKind == MethodKind.Ordinary && compilation.IsSymbolAccessibleWithin(m, method.ContainingType)) is { } inherited)
+                    m.MethodKind == MethodKind.Ordinary && compilation.IsSymbolAccessibleWithin(m, method.ContainingType) &&
+                    !Overrides(method, m)) is { } inherited)
                 return inherited;
         }
 
         return null;
     }
+
+    private static bool Overrides(IMethodSymbol method, IMethodSymbol other)
+    {
+        for (var overridden = method.OverriddenMethod; overridden is not null; overridden = overridden.OverriddenMethod)
+        {
+            if (SymbolEqualityComparer.Default.Equals(overridden.OriginalDefinition, other.OriginalDefinition))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static IMethodSymbol OverriddenRoot(IMethodSymbol method)
+    {
+        while (method.OverriddenMethod is { } overridden)
+            method = overridden;
+        return method;
+    }
+
+    // Name lookup on the derived type finds the generated fallback before the override, so an override is called through the type declaring the virtual method.
+    private static string VirtualReceiver(IMethodSymbol method, string receiver) =>
+        method.IsOverride ? $"((global::{OverriddenRoot(method).ContainingType.ToDisplayString()}){receiver})" : receiver;
+
+    // A call binds to the method declaring the virtual slot or to an override, while [DuckTyped] may sit on any of them.
+    private static IMethodSymbol? FindDuckTypedInHierarchy(IMethodSymbol candidate, ITypeSymbol? receiverType)
+    {
+        for (var method = candidate; method is not null; method = method.OverriddenMethod)
+        {
+            if (method.OriginalDefinition is { DeclaringSyntaxReferences.Length: > 0 } definition && IsDuckTyped(definition))
+                return definition;
+        }
+
+        if (!candidate.IsVirtual && !candidate.IsAbstract && !candidate.IsOverride)
+            return null;
+
+        for (var type = receiverType as INamedTypeSymbol; type is not null; type = type.BaseType)
+        {
+            if (type.GetMembers(candidate.Name).OfType<IMethodSymbol>().FirstOrDefault(m =>
+                    m is { IsOverride: true, DeclaringSyntaxReferences.Length: > 0 } && IsDuckTyped(m) && Overrides(m, candidate)) is { } duckOverride)
+                return duckOverride;
+        }
+
+        return null;
+    }
+
+    private static ITypeSymbol? GetReceiverType(SemanticModel semanticModel, InvocationExpressionSyntax invocation, CancellationToken ct) =>
+        GetReceiverExpression(invocation) is { } receiver
+            ? semanticModel.GetTypeInfo(receiver, ct).Type
+            : semanticModel.GetEnclosingSymbol(invocation.SpanStart, ct)?.ContainingType;
 
     // Mirrors the declaration CreateFallbackVariant emits: the subset's parameters become the method's type parameters in order.
     // Parameters differing only in ref, out or in can't overload each other either, so only by-reference versus by-value counts.
@@ -1419,7 +1559,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
             {{EditorBrowsableNever}}{{yieldToOverloadsAttribute}}
             {{Utilities.AccessibilityKeyword(method.DeclaredAccessibility)}} {{(method.IsStatic ? "static " : "")}}{{method.ReturnType.ToDisplayString()}} {{method.Name}}<{{string.Join(", ", typeParameterNames.Values)}}>({{parameters}})
             {
-                {{(method.ReturnsVoid ? "" : "return ")}}{{method.Name}}({{arguments}});
+                {{(method.ReturnsVoid ? "" : "return ")}}{{(method.IsOverride ? VirtualReceiver(method, "this") + "." : "")}}{{method.Name}}({{arguments}});
             }
             """;
     }
@@ -1451,7 +1591,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
 
         var arguments = string.Join(", ", constructed.Parameters.Select(p =>
             duckArguments.TryGetValue(p.Ordinal, out var duck) && duck.AdapterName is not null
-                ? $"new global::{GeneratedNamespace}.{duck.AdapterName}({Utilities.Identifier(p.Name)})"
+                ? $"new {duck.AdapterName}({Utilities.Identifier(p.Name)})"
                 : Utilities.Argument(p)));
 
         var typeArguments = constructed.TypeArguments.IsEmpty
@@ -1483,7 +1623,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         Dictionary<int, (ITypeSymbol ConcreteType, string? AdapterName)> duckArguments, bool isReduced)
     {
         // Anonymous types can't be named in the signature, so the interceptor stays generic like the fallback it replaces.
-        var isGeneric = duckArguments.Values.Any(d => d.ConcreteType.IsAnonymousType);
+        var isGeneric = duckArguments.Values.Any(d => d.ConcreteType.IsAnonymousType || !IsNameable(d.ConcreteType));
         var parameters = method.Parameters.Select(p =>
         {
             // A call on a receiver is intercepted by an extension method, whatever the intercepted method is declared as.
@@ -1507,8 +1647,8 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
 
             var name = Utilities.Identifier(p.Name);
             if (isGeneric)
-                name = duck.ConcreteType.IsAnonymousType ? $"(object){name}!" : $"({duck.ConcreteType.ToDisplayString()})(object){name}!";
-            var value = duck.AdapterName is null ? name : $"new global::{GeneratedNamespace}.{duck.AdapterName}({name})";
+                name = duck.ConcreteType.IsAnonymousType || !IsNameable(duck.ConcreteType) ? $"(object){name}!" : $"({duck.ConcreteType.ToDisplayString()})(object){name}!";
+            var value = duck.AdapterName is null ? name : $"new {duck.AdapterName}({name})";
             return $"(global::{WithoutNullability(p.Type).ToDisplayString()})({value})";
         });
         var typeParameters = isGeneric ? $"<{string.Join(", ", duckArguments.Keys.OrderBy(o => o).Select(o => FallbackTypeParameterName(method.Parameters[o])))}>" : "";
@@ -1534,7 +1674,7 @@ public sealed class IfItQuacksGenerator : IIncrementalGenerator
         IEnumerable<string> parameters, IEnumerable<string> arguments)
     {
         var receiver = method.IsStatic ? $"global::{method.ContainingType.ToDisplayString()}" : "@this";
-        var call = $"{receiver}.{(NeedsForwarder(method) ? ForwarderName(method) : method.Name)}({string.Join(", ", arguments)});";
+        var call = $"{VirtualReceiver(method, receiver)}.{(NeedsForwarder(method) ? ForwarderName(method) : method.Name)}({string.Join(", ", arguments)});";
 
         var sb = new StringBuilder();
         sb.AppendLine("        " + location.GetInterceptsLocationAttributeSyntax());

@@ -248,6 +248,8 @@ The generated fallback for a `[DuckTyped]` extension method has an unconstrained
 
 - `[DuckTyped]` methods get generated overloads on the containing type. They are hidden from IntelliSense, but still visible through reflection (see [How does it work?](concepts.md)).
 - A `private`, `protected` or `private protected` `[DuckTyped]` method is called through a generated `internal` forwarder (`__IfItQuacks_<Name>`), which makes it reachable inside the assembly.
+- An argument whose type is a `private`, `protected` or `private protected` nested type gets its adapter nested in the type declaring it, so that type and every type around it must be `partial`; otherwise the call reports [`IFITQUACKS001`](diagnostics.md#ifitquacks001). Only `[DuckTyped]` calls to non-generic methods and `Duck.As` support this.
+- `[DuckTyped]` on an override calls the method through the base type that declares it, so a `protected` or `private protected` override reports [`IFITQUACKS004`](diagnostics.md#ifitquacks004); put `[DuckTyped]` on the base method instead.
 - The generated `IfItQuacks` types are `internal`. If a project using IfItQuacks grants `InternalsVisibleTo` to another project that uses it too, the compiler warns about the duplicate types (`CS0436`) and uses the local ones.
 
 ## Allocations

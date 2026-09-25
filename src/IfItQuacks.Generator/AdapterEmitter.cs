@@ -26,7 +26,7 @@ internal static class AdapterEmitter
             })
             .FirstOrDefault(name => name is not null);
 
-    public static string Emit(INamedTypeSymbol shape, INamedTypeSymbol concreteType, string adapterName, Compilation compilation)
+    public static string Emit(INamedTypeSymbol shape, INamedTypeSymbol concreteType, string adapterName, Compilation compilation, bool takesObject = false)
     {
         var sb = new StringBuilder();
         var valueTypeName = concreteType.IsAnonymousType ? "object" : concreteType.ToDisplayString();
@@ -38,7 +38,9 @@ internal static class AdapterEmitter
         sb.AppendLine($"    internal readonly struct {adapterName} : global::{shape.ToDisplayString()}, global::IfItQuacks.IDuckAdapter");
         sb.AppendLine("    {");
         sb.AppendLine($"        private readonly {valueTypeName} _value;");
-        sb.AppendLine($"        public {adapterName}({valueTypeName} value) => _value = value;");
+        sb.AppendLine(takesObject
+            ? $"        public {adapterName}(object value) => _value = ({valueTypeName})value;"
+            : $"        public {adapterName}({valueTypeName} value) => _value = value;");
         sb.AppendLine("        object? global::IfItQuacks.IDuckAdapter.Value => _value;");
 
         EmitInstanceMembers(sb, shape, concreteType, receiver, compilation, Owner);

@@ -19,7 +19,9 @@ internal sealed record CallSiteOutput(
     string? Interceptor,
     EquatableArray<GeneratedFile> Adapters,
     OverloadMember? Overload,
-    EquatableArray<Diagnostic> Diagnostics);
+    EquatableArray<Diagnostic> Diagnostics,
+    EquatableArray<OverloadMember> NestedAdapters = default);
 
 // A sequence argument needs the wrapper and the adapter for its elements.
-internal sealed record AdapterSet(string Name, ImmutableArray<GeneratedFile> Files);
+// An adapter for a type only its containing type can name is nested in that type instead of going into the Files.
+internal sealed record AdapterSet(string Name, ImmutableArray<GeneratedFile> Files, string Reference, OverloadMember? Nested = null);

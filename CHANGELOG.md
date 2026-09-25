@@ -6,6 +6,15 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 ## [Unreleased]
 
+### Fixed
+
+- An argument whose type is a `private`, `protected` or `private protected` nested type failed the build with `CS0122` in
+  generated code. Its adapter is now nested in the type declaring it, which has to be `partial`; otherwise the call is
+  reported with `IFITQUACKS001`. Reported by [@robertodalmonte](https://github.com/robertodalmonte) in #3
+- A `[DuckTyped]` override of a method that isn't `[DuckTyped]` was reported with `IFITQUACKS004` (and, before v1.5.2,
+  overflowed the stack at runtime). It is now supported; a `protected` override is still reported.
+- Calling a `protected` `[DuckTyped]` method from a derived type that overrides it threw `DuckTypeMismatchException`.
+
 ## [v1.5.2] - 2026-09-24
 
 ### Fixed
