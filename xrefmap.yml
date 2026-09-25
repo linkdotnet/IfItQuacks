@@ -1,0 +1,24 @@
+### YamlMime:XRefMap
+sorted: true
+references:
+- uid: benchmarks
+  name: Benchmarks
+  href: articles/benchmarks.html
+- uid: concepts
+  name: How does it work?
+  href: articles/concepts.html
+- uid: constrained_duck_typing
+  name: Constrained duck typing
+  href: articles/constrained_duck_typing.html
+- uid: diagnostics
+  name: Diagnostics
+  href: articles/diagnostics.html
+- uid: getting_started
+  name: Getting started
+  href: articles/getting_started.html
+- uid: known_limitations
+  name: Known limitations
+  href: articles/known_limitations.html
+- uid: mapped_shapes
+  name: Mapped shapes
+  href: articles/mapped_shapes.html

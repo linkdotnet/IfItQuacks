@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+      <title>How does it work? | IfItQuacks </title>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <meta name="title" content="How does it work? | IfItQuacks ">
+      <meta name="description" content="Compile-time checked structural (duck) typing for C# via a Roslyn source generator and interceptors.">
+      
+      <link rel="icon" href="../images/logo.png">
+      <link rel="stylesheet" href="../public/docfx.min.css">
+      <link rel="stylesheet" href="../public/main.css">
+      <meta name="docfx:navrel" content="../toc.html">
+      <meta name="docfx:tocrel" content="toc.html">
+      
+      <meta name="docfx:rel" content="../">
+      
+      
+      <meta name="docfx:docurl" content="https://github.com/linkdotnet/IfItQuacks/blob/main/docs/site/articles/concepts.md/#L1">
+      <meta name="loc:inThisArticle" content="In this article">
+      <meta name="loc:searchResultsCount" content="{count} results for &quot;{query}&quot;">
+      <meta name="loc:searchNoResults" content="No results for &quot;{query}&quot;">
+      <meta name="loc:tocFilter" content="Filter by title">
+      <meta name="loc:nextArticle" content="Next">
+      <meta name="loc:prevArticle" content="Previous">
+      <meta name="loc:themeLight" content="Light">
+      <meta name="loc:themeDark" content="Dark">
+      <meta name="loc:themeAuto" content="Auto">
+      <meta name="loc:changeTheme" content="Change theme">
+      <meta name="loc:copy" content="Copy">
+      <meta name="loc:downloadPdf" content="Download PDF">
+
+      <script type="module" src="./../public/docfx.min.js"></script>
+
+      <script>
+        const theme = localStorage.getItem('theme') || 'auto'
+        document.documentElement.setAttribute('data-bs-theme', theme === 'auto' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme)
+      </script>
+
+  </head>
+
+  <body class="tex2jax_ignore" data-layout="" data-yaml-mime="">
+    <header class="bg-body border-bottom">
+      <nav id="autocollapse" class="navbar navbar-expand-md" role="navigation">
+        <div class="container-xxl flex-nowrap">
+          <a class="navbar-brand" href="../index.html">
+            <img id="logo" class="svg" src="../images/logo.png" alt="IfItQuacks">
+            IfItQuacks
+          </a>
+          <button class="btn btn-lg d-md-none border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navpanel" aria-controls="navpanel" aria-expanded="false" aria-label="Toggle navigation">
+            <i class="bi bi-three-dots"></i>
+          </button>
+          <div class="collapse navbar-collapse" id="navpanel">
+            <div id="navbar">
+              <form class="search" role="search" id="search">
+                <i class="bi bi-search"></i>
+                <input class="form-control" id="search-query" type="search" disabled placeholder="Search" autocomplete="off" aria-label="Search">
+              </form>
+            </div>
+          </div>
+        </div>
+      </nav>
+    </header>
+
+    <main class="container-xxl">
+      <div class="toc-offcanvas">
+        <div class="offcanvas-md offcanvas-start" tabindex="-1" id="tocOffcanvas" aria-labelledby="tocOffcanvasLabel">
+          <div class="offcanvas-header">
+            <h5 class="offcanvas-title" id="tocOffcanvasLabel">Table of Contents</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#tocOffcanvas" aria-label="Close"></button>
+          </div>
+          <div class="offcanvas-body">
+            <nav class="toc" id="toc"></nav>
+          </div>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="actionbar">
+          <button class="btn btn-lg border-0 d-md-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#tocOffcanvas" aria-controls="tocOffcanvas" aria-expanded="false" aria-label="Show table of contents">
+            <i class="bi bi-list"></i>
+          </button>
+
+        </div>
+
+        <article data-uid="concepts">
+<h1 id="how-does-it-work">How does it work?</h1>
+
+<p>IfItQuacks is a Roslyn incremental source generator. For every <code>[DuckTyped]</code> method it performs four steps at compile time.</p>
+<p>The generator only looks at calls whose name matches a <code>[DuckTyped]</code> method or <code>Duck.As</code>, and caches its results per call site. Editing a file without such calls doesn't regenerate anything, which keeps the IDE responsive in large solutions.</p>
+<h2 id="1-fallback-overload">1. Fallback overload</h2>
+<p>A call like <code>Ops.Foo(new A())</code> would not compile, because <code>A</code> is not an <code>IDoable</code>. To make it compile, the generator adds a generic overload to the <code>partial</code> containing type, with one type parameter per interface parameter. All other parameters are copied, including ref-kinds and default values:</p>
+<pre><code class="lang-csharp">// [DuckTyped] public string Meet(INamed first, int times, INamed second)
+[EditorBrowsable(EditorBrowsableState.Never)]
+public string Meet&lt;TDuck0, TDuck2&gt;(TDuck0 first, int times, TDuck2 second)
+{
+    return Meet(first is global::INamed __duck0 ? __duck0 : throw new global::IfItQuacks.DuckTypeMismatchException(typeof(TDuck0), typeof(global::INamed)), times, /* same for second */);
+}
+</code></pre>
+<p>The call now binds to the generic overload. It is hidden from IntelliSense and replaced in the next steps. It only runs if a call couldn't be verified at compile time, e.g. from generic code or another assembly: then it calls your method if the value implements the interface at runtime, and throws <code>DuckTypeMismatchException</code> otherwise.</p>
+<p>A generic parameter can't be inferred from <code>null</code>, <code>default</code> or an omitted argument. So the generator emits one overload per combination of generic and non-generic interface parameters - <code>Meet&lt;TDuck0&gt;(TDuck0 first, int times, INamed second)</code>, <code>Meet&lt;TDuck2&gt;(INamed first, int times, TDuck2 second)</code> and <code>Meet&lt;TDuck0, TDuck2&gt;(...)</code> above. Overload resolution then picks the one keeping <code>null</code> arguments, omitted defaults and values already typed as the interface as they are. For methods with more than four interface parameters only the all-generic overload is generated.</p>
+<p>Each fallback overload is marked <code>[OverloadResolutionPriority(-1)]</code>, so it never takes a call from an overload you wrote. With <code>Greet(INamed)</code> and <code>Greet(object)</code>, <code>Greet(42)</code> binds to <code>Greet(object)</code>. <code>Greet(new Person())</code> binds there too, and is then intercepted and redirected to <code>Greet(INamed)</code> if C# would pick that overload had <code>Person</code> implemented <code>INamed</code>. An exact <code>Greet(Person)</code> still wins. The attribute needs C# 13 (it is generated on .NET 8), and without it a <code>[DuckTyped]</code> method with such an overload is reported with <a href="diagnostics.html#ifitquacks004"><code>IFITQUACKS004</code></a>.</p>
+<h2 id="2-structural-matching">2. Structural matching</h2>
+<p>For every call of the <code>[DuckTyped]</code> method, the static type of each argument passed to an interface parameter is checked against that interface. Arguments are matched to parameters by position or by name. If the type already implements the interface (including explicit implementations and variance), nothing else is needed. Otherwise every interface member needs a public counterpart (see <a href="getting_started.html#matching-an-interface">Matching an interface</a>); members with a default implementation are optional.</p>
+<p>Members inherited from base classes count, public fields can satisfy properties, and member types only need to be assignable. If something is missing or incompatible, <a href="diagnostics.html#ifitquacks001"><code>IFITQUACKS001</code></a> is reported on the argument.</p>
+<h2 id="3-adapter">3. Adapter</h2>
+<p>If the argument type does not already implement the interface, a <code>readonly struct</code> adapter is emitted into <code>IfItQuacks.Generated</code>:</p>
+<pre><code class="lang-csharp">internal readonly struct ShapeAdapter_IDoable_A : global::IDoable, global::IfItQuacks.IDuckAdapter
+{
+    private readonly A _value;
+    public ShapeAdapter_IDoable_A(A value) =&gt; _value = value;
+    object? global::IfItQuacks.IDuckAdapter.Value =&gt; _value;
+    void global::IDoable.Do() =&gt; _value.Do();
+    public override bool Equals(object? obj) =&gt; obj is ShapeAdapter_IDoable_A other &amp;&amp; global::System.Object.Equals(_value, other._value);
+    public override int GetHashCode() =&gt; _value?.GetHashCode() ?? 0;
+    public override string ToString() =&gt; _value?.ToString() ?? string.Empty;
+}
+</code></pre>
+<p>One adapter is generated per interface/type combination. Interface members are implemented explicitly, so members with the same name from different interfaces (like <code>GetEnumerator()</code> of <code>IEnumerable&lt;T&gt;</code> and <code>IEnumerable</code>) don't clash. <code>Equals</code>, <code>GetHashCode</code> and <code>ToString</code> forward to the wrapped value, so adapters of the same instance are equal - to each other, not to the instance; <code>IDuckAdapter</code> lets <code>Duck.Unwrap</code> return that instance.</p>
+<p>If a member was matched with an assignable instead of an identical parameter type, the forwarder casts the argument (<code>_value.Add((object)item)</code>), so the call binds to exactly the member that was matched.</p>
+<h3 id="anonymous-types">Anonymous types</h3>
+<p>An anonymous type has no name the adapter could use. But two anonymous object expressions with the same property names, types and order in one compilation have the same type, so the adapter stores the value as <code>object</code> and casts it back using an example expression:</p>
+<pre><code class="lang-csharp">internal readonly struct ShapeAdapter_INamed_Anonymous_... : global::INamed, global::IfItQuacks.IDuckAdapter
+{
+    private readonly object _value;
+    string global::INamed.Name { get =&gt; __CastByExample(_value, static () =&gt; new { Name = default(global::System.String)! }).Name; }
+    private static T __CastByExample&lt;T&gt;(object value, global::System.Func&lt;T&gt; example) =&gt; (T)value;
+    // Equals, GetHashCode, ToString, ...
+}
+</code></pre>
+<p>The example lambda is never invoked and doesn't capture anything, so it isn't allocated per call. Because the argument's type can't be named in the interceptor either, calls with anonymous arguments get a generic interceptor with the same type parameters as the fallback overload.</p>
+<h2 id="4-interceptor">4. Interceptor</h2>
+<p>Finally, every verified call site is intercepted:</p>
+<pre><code class="lang-csharp">[InterceptsLocation(...)]
+public static void Interceptor_1(A value)
+{
+    global::Ops.Foo((global::IDoable)(new global::IfItQuacks.Generated.ShapeAdapter_IDoable_A(value)));
+}
+</code></pre>
+<p>The compiler replaces the call to the fallback overload with the interceptor, which wraps each duck-typed argument and calls your original method. The cast to the interface makes sure overload resolution picks your method and not the generic fallback.</p>
+<p>For instance methods the interceptor takes the receiver as its first parameter and forwards the remaining arguments as they are:</p>
+<pre><code class="lang-csharp">[InterceptsLocation(...)]
+public static string Interceptor_2(this global::Greeter @this, Person first, Pet second, string greeting)
+{
+    return @this.Greet((global::INamed)(new ShapeAdapter_INamed_Person(first)), (global::INamed)(new ShapeAdapter_INamed_Pet(second)), greeting);
+}
+</code></pre>
+<p>Because the adapter is passed as an interface, each call boxes the adapter (see <a href="#allocations">Allocations</a>). The generated members are trivial forwarders, so they are not marked with <code>[MethodImpl(MethodImplOptions.AggressiveInlining)]</code>: calls through an interface can't be inlined by that attribute, and benchmarks showed no difference.</p>
+<p>Since the adapter holds a copy of the argument, only classes and <code>readonly struct</code>s are supported. See <a href="known_limitations.html#structs">Known limitations</a> for details.</p>
+<h2 id="duckas">Duck.As</h2>
+<p><code>Duck.As&lt;TShape&gt;(object value)</code> is part of the generated <code>IfItQuacks</code> namespace. Its body only casts, throwing <code>DuckTypeMismatchException</code> if the value doesn't implement the interface; every call the generator can verify is intercepted instead:</p>
+<pre><code class="lang-csharp">// You write
+IDoable doable = Duck.As&lt;IDoable&gt;(new A());
+
+// The generator emits
+[InterceptsLocation(...)]
+public static global::IDoable Interceptor_2(object value) =&gt;
+    (global::IDoable)(new global::IfItQuacks.Generated.ShapeAdapter_IDoable_A((A)value));
+</code></pre>
+<p>The argument's static type (<code>A</code>) drives structural matching and adapter selection, exactly as for <code>[DuckTyped]</code> methods, and the same adapters are shared. If <code>A</code> already implements <code>IDoable</code>, the interceptor is a plain cast and no adapter is involved.</p>
+<h2 id="delegates-and-method-groups">Delegates and method groups</h2>
+<p>A delegate has no member named like the interface's method, so the adapter forwards to its <code>Invoke</code>:</p>
+<pre><code class="lang-csharp">internal readonly struct ShapeAdapter_IFormatter_Func_int_string_ : IFormatter, IDuckAdapter
+{
+    private readonly global::System.Func&lt;int, string&gt; _value;
+    string global::IFormatter.Format(int value) =&gt; _value.Invoke(value);
+}
+</code></pre>
+<p>Lambdas and method groups have no type of their own, so the generator uses their natural type (<code>Func&lt;...&gt;</code>/<code>Action&lt;...&gt;</code>), exactly like the compiler does.</p>
+<p>A method group can't be intercepted - it isn't a call. Instead the generator adds a concrete overload for the delegate the group converts to, and overload resolution picks it over the generic fallback:</p>
+<pre><code class="lang-csharp">// You write
+Func&lt;Person, string&gt; describe = Ops.Describe;
+
+// The generator emits
+public static string Describe(global::Person named) =&gt;
+    Describe(new global::IfItQuacks.Generated.ShapeAdapter_INamed_Person(named));
+</code></pre>
+<h2 id="extension-methods">Extension methods</h2>
+<p>An instance call is intercepted <em>by</em> a static extension method, which is exactly the shape a <code>[DuckTyped]</code> extension method needs. Both the fallback and the interceptor keep the <code>this</code>:</p>
+<pre><code class="lang-csharp">// [DuckTyped] public static string Greet(this INamed named)
+public static string Greet&lt;TDuck0&gt;(this TDuck0 named) { /* runtime cast */ }
+
+[InterceptsLocation(...)]
+public static string Interceptor_1(this Person named) =&gt;
+    global::Ops.Greet((global::INamed)(new ShapeAdapter_INamed_Person(named)));
+</code></pre>
+<p>The same method called as <code>Ops.Greet(person)</code> is a static call, so its interceptor is a plain static method. Because the receiver isn't part of the argument list, the generator maps it to the first parameter itself.</p>
+<h2 id="stubs-and-merged-adapters">Stubs and merged adapters</h2>
+<p><code>Duck.Stub</code> emits the same adapter as <code>Duck.As</code>, plus an implementation for every interface member the value doesn't provide:</p>
+<pre><code class="lang-csharp">internal readonly struct StubAdapter_IRepository_Anonymous_... : IRepository, IDuckAdapter
+{
+    Order? global::IRepository.Find(int id) =&gt; __CastByExample(_value, ...).Find(id);
+    void global::IRepository.Save(Order order) =&gt; throw new DuckStubException(&quot;void IRepository.Save(Order order)&quot;);
+}
+</code></pre>
+<p><code>Duck.Merge</code> holds one field per value and takes every member from the first field whose type implements the member's interface, else from the first field providing it structurally. <code>IDuckAdapter.Value</code> and <code>ToString</code> forward to the first value; <code>Equals</code> and <code>GetHashCode</code> cover every value, so two merges are equal only when all their values are.</p>
+<h2 id="sequences">Sequences</h2>
+<p>A sequence argument gets two generated types: the element adapter, and a wrapper implementing the collection interface that applies it while enumerating.</p>
+<pre><code class="lang-csharp">internal readonly struct SequenceAdapter_IEnumerable_INamed__List_Person_ : IEnumerable&lt;INamed&gt;, IDuckAdapter
+{
+    private readonly List&lt;Person&gt; _value;
+
+    IEnumerator&lt;INamed&gt; IEnumerable&lt;INamed&gt;.GetEnumerator()
+    {
+        foreach (var item in (IEnumerable&lt;Person&gt;)_value)
+            yield return (INamed)(new ShapeAdapter_INamed_Person(item));
+    }
+}
+</code></pre>
+<p><code>IReadOnlyCollection&lt;T&gt;</code> adds <code>Count</code> and <code>IReadOnlyList&lt;T&gt;</code> the indexer, both forwarded to the source. Nothing is copied, so the wrapper stays a view - and each enumeration allocates one adapter per element.</p>
+<h2 id="duckto">Duck.To</h2>
+<p><code>Duck.To</code> is the one conversion that emits no adapter at all. The call is replaced by a factory that reads every member once:</p>
+<pre><code class="lang-csharp">internal static class CopyFactory_CustomerDto_Customer
+{
+    public static CustomerDto Create(global::Customer value) =&gt; new global::CustomerDto(value.Name, value.Email);
+}
+
+[InterceptsLocation(...)]
+public static global::CustomerDto Interceptor_3(object value) =&gt;
+    global::IfItQuacks.Generated.CopyFactory_CustomerDto_Customer.Create((global::Customer)value);
+</code></pre>
+<p>The constructor taking the most parameters the source can fill wins; everything else it can set goes into an object initializer, so <code>init</code> and <code>required</code> members work.</p>
+<h2 id="duck-typed-constraints">Duck-typed constraints</h2>
+<p>A duck type can be written as a constrained type parameter (<code>where T : IShape</code>) instead of an interface parameter. There is no call to intercept then - the generator adds a concrete overload that passes the adapter <strong>as the type argument</strong>:</p>
+<pre><code class="lang-csharp">// [DuckTyped] public static int Describe&lt;T&gt;(T person) where T : IPerson
+public static int Describe(global::Person person) =&gt;
+    Describe&lt;ShapeAdapter_IPerson_Person&gt;(new ShapeAdapter_IPerson_Person(person));
+</code></pre>
+<p>The adapter is the same <code>readonly struct</code>; only its use changes. A struct type argument makes the runtime compile a separate copy of the method for that adapter, so the interface calls inside it are devirtualized and the forwarders inline - and nothing is boxed, because the adapter never becomes an interface. See <a href="constrained_duck_typing.html">Constrained duck typing</a> for when to choose this form.</p>
+<p>This is also the only way to reach <code>static abstract</code> members, which no instance can provide. There the adapter becomes its own type argument, forwards the statics and operators to the wrapped type and converts back:</p>
+<pre><code class="lang-csharp">internal readonly struct ShapeAdapter_IAddable_Money_Money : IAddable&lt;ShapeAdapter_IAddable_Money_Money&gt;, IDuckAdapter
+{
+    private readonly global::Money _value;
+    public static explicit operator global::Money(ShapeAdapter_IAddable_Money_Money adapter) =&gt; adapter._value;
+    public static ShapeAdapter_IAddable_Money_Money Zero =&gt; new(global::Money.Zero);
+    public static ShapeAdapter_IAddable_Money_Money operator +(ShapeAdapter_IAddable_Money_Money left, ShapeAdapter_IAddable_Money_Money right) =&gt;
+        new(left._value + right._value);
+}
+
+// and on your type
+public static global::Money Sum(global::Money first, global::Money second) =&gt;
+    (global::Money)(Sum&lt;ShapeAdapter_IAddable_Money_Money&gt;(new(first), new(second)));
+</code></pre>
+<p>Because the adapter is passed as a <em>constrained type argument</em> rather than an interface, these calls don't box - which is true of every constrained duck-typed call, not just the generic-math ones.</p>
+<h2 id="allocations">Allocations</h2>
+<p>Nothing here is free, but nothing is hidden either. The generated code is what you would write by hand:</p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>What happens</th>
+<th>Allocation (x64/arm64)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Class argument</td>
+<td>The adapter struct holds the reference and is boxed as the interface.</td>
+<td>24 bytes, one object</td>
+</tr>
+<tr>
+<td>Argument already implements the interface</td>
+<td>Passed through (<code>[DuckTyped]</code>) or cast (<code>Duck.As</code>).</td>
+<td>none</td>
+</tr>
+<tr>
+<td><code>readonly struct</code> via <code>[DuckTyped]</code></td>
+<td>The interceptor takes the struct by value; the adapter holding a copy is boxed.</td>
+<td>one object: 16 bytes + struct size</td>
+</tr>
+<tr>
+<td><code>readonly struct</code> via <code>Duck.As</code></td>
+<td>The struct is boxed into the <code>object</code> parameter, unboxed by the interceptor, then the adapter is boxed.</td>
+<td>two objects</td>
+</tr>
+<tr>
+<td>Sequence argument</td>
+<td>The wrapper is boxed once, plus one boxed adapter per element <strong>per enumeration</strong>.</td>
+<td>one object + one per element</td>
+</tr>
+<tr>
+<td><code>Duck.To</code></td>
+<td>Only the target itself.</td>
+<td>the target</td>
+</tr>
+</tbody>
+</table>
+<p>Numbers were measured with <code>GC.GetAllocatedBytesForCurrentThread</code>; see <a href="benchmarks.html">Benchmarks</a> for timings. The JIT may elide the box when it can inline your method and prove the adapter doesn't escape, but don't rely on it. Prefer classes (or types implementing the interface) on hot paths when using <code>Duck.As</code>.</p>
+<h2 id="generic-methods">Generic methods</h2>
+<p>A generic <code>[DuckTyped]</code> method like <code>T Unwrap&lt;T&gt;(IContainer&lt;T&gt; c)</code> can't use the fallback and interceptor from above. An interceptor has to keep the signature of the call it replaces, and a generic fallback <code>Unwrap&lt;TArg&gt;(TArg value)</code> can't return <code>int</code> for one call and <code>string</code> for another.</p>
+<p>Instead, the generator infers the method's type arguments per argument type by matching the interface's members against the argument's members, e.g. <code>int Get()</code> against <code>T Get()</code> gives <code>T = int</code>. It then emits one adapter per closed interface (<code>IContainer&lt;int&gt;</code>, <code>IContainer&lt;string&gt;</code>, ...) and one concrete overload per combination of argument types. The overloads are hidden from IntelliSense:</p>
+<pre><code class="lang-csharp">public static partial class Ops
+{
+    public static int Unwrap(global::IntBox value) =&gt;
+        Unwrap&lt;int&gt;(new global::IfItQuacks.Generated.ShapeAdapter_IContainer_int__IntBox(value));
+
+    public static string Unwrap(global::Box&lt;string&gt; value) =&gt;
+        Unwrap&lt;string&gt;(new global::IfItQuacks.Generated.ShapeAdapter_IContainer_string__Box_string_(value));
+}
+</code></pre>
+<p>The call <code>Ops.Unwrap(new IntBox())</code> binds to the concrete overload, which has the correct return type. Other parameters are substituted as well, so <code>T Add&lt;T&gt;(IContainer&lt;T&gt; c, T fallback)</code> gets <code>int Add(IntBox c, int fallback)</code>. If every duck-typed argument already implements its closed interface, the call binds to your method directly and no overload is generated. If the argument's type isn't publicly visible, the overload is generated as <code>internal</code>.</p>
+<p>A non-generic method with a closed generic interface, e.g. <code>int Sum(IContainer&lt;int&gt; c)</code>, uses the regular fallback and interceptor.</p>
+
+</article>
+
+        <div class="contribution d-print-none">
+          <a href="https://github.com/linkdotnet/IfItQuacks/blob/main/docs/site/articles/concepts.md/#L1" class="edit-link">Edit this page</a>
+        </div>
+
+        <div class="next-article d-print-none border-top" id="nextArticle"></div>
+
+      </div>
+
+      <div class="affix">
+        <nav id="affix"></nav>
+      </div>
+    </main>
+
+    <div class="container-xxl search-results" id="search-results"></div>
+
+    <footer class="border-top text-secondary">
+      <div class="container-xxl">
+        <div class="flex-fill">
+          <span>Made with <a href="https://dotnet.github.io/docfx">docfx</a></span>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

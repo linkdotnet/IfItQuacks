@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+      <title>Diagnostics | IfItQuacks </title>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <meta name="title" content="Diagnostics | IfItQuacks ">
+      <meta name="description" content="Compile-time checked structural (duck) typing for C# via a Roslyn source generator and interceptors.">
+      
+      <link rel="icon" href="../images/logo.png">
+      <link rel="stylesheet" href="../public/docfx.min.css">
+      <link rel="stylesheet" href="../public/main.css">
+      <meta name="docfx:navrel" content="../toc.html">
+      <meta name="docfx:tocrel" content="toc.html">
+      
+      <meta name="docfx:rel" content="../">
+      
+      
+      <meta name="docfx:docurl" content="https://github.com/linkdotnet/IfItQuacks/blob/main/docs/site/articles/diagnostics.md/#L1">
+      <meta name="loc:inThisArticle" content="In this article">
+      <meta name="loc:searchResultsCount" content="{count} results for &quot;{query}&quot;">
+      <meta name="loc:searchNoResults" content="No results for &quot;{query}&quot;">
+      <meta name="loc:tocFilter" content="Filter by title">
+      <meta name="loc:nextArticle" content="Next">
+      <meta name="loc:prevArticle" content="Previous">
+      <meta name="loc:themeLight" content="Light">
+      <meta name="loc:themeDark" content="Dark">
+      <meta name="loc:themeAuto" content="Auto">
+      <meta name="loc:changeTheme" content="Change theme">
+      <meta name="loc:copy" content="Copy">
+      <meta name="loc:downloadPdf" content="Download PDF">
+
+      <script type="module" src="./../public/docfx.min.js"></script>
+
+      <script>
+        const theme = localStorage.getItem('theme') || 'auto'
+        document.documentElement.setAttribute('data-bs-theme', theme === 'auto' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme)
+      </script>
+
+  </head>
+
+  <body class="tex2jax_ignore" data-layout="" data-yaml-mime="">
+    <header class="bg-body border-bottom">
+      <nav id="autocollapse" class="navbar navbar-expand-md" role="navigation">
+        <div class="container-xxl flex-nowrap">
+          <a class="navbar-brand" href="../index.html">
+            <img id="logo" class="svg" src="../images/logo.png" alt="IfItQuacks">
+            IfItQuacks
+          </a>
+          <button class="btn btn-lg d-md-none border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navpanel" aria-controls="navpanel" aria-expanded="false" aria-label="Toggle navigation">
+            <i class="bi bi-three-dots"></i>
+          </button>
+          <div class="collapse navbar-collapse" id="navpanel">
+            <div id="navbar">
+              <form class="search" role="search" id="search">
+                <i class="bi bi-search"></i>
+                <input class="form-control" id="search-query" type="search" disabled placeholder="Search" autocomplete="off" aria-label="Search">
+              </form>
+            </div>
+          </div>
+        </div>
+      </nav>
+    </header>
+
+    <main class="container-xxl">
+      <div class="toc-offcanvas">
+        <div class="offcanvas-md offcanvas-start" tabindex="-1" id="tocOffcanvas" aria-labelledby="tocOffcanvasLabel">
+          <div class="offcanvas-header">
+            <h5 class="offcanvas-title" id="tocOffcanvasLabel">Table of Contents</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#tocOffcanvas" aria-label="Close"></button>
+          </div>
+          <div class="offcanvas-body">
+            <nav class="toc" id="toc"></nav>
+          </div>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="actionbar">
+          <button class="btn btn-lg border-0 d-md-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#tocOffcanvas" aria-controls="tocOffcanvas" aria-expanded="false" aria-label="Show table of contents">
+            <i class="bi bi-list"></i>
+          </button>
+
+        </div>
+
+        <article data-uid="diagnostics">
+<h1 id="diagnostics">Diagnostics</h1>
+
+<p>All diagnostics are in the <code>IfItQuacks</code> category and reported as errors, except the warning <a href="#ifitquacks012"><code>IFITQUACKS012</code></a>.</p>
+<h2 id="ifitquacks001">IFITQUACKS001</h2>
+<p><strong>Argument does not structurally satisfy interface</strong></p>
+<p>The argument's type is missing a member of the interface, or a member has an incompatible type (see <a href="getting_started.html#matching-an-interface">Matching an interface</a>), no public getter/setter or is a <code>readonly</code> field where the interface declares a setter. It is also reported for anonymous types passed to generic <code>[DuckTyped]</code> methods, and for anonymous types with a property whose type contains another anonymous type as a type argument or array element. For generic <code>[DuckTyped]</code> methods this is also reported when the type arguments can't be inferred from the argument. The compiler reports <code>CS0411</code> in addition, because no generic fallback overload exists for these methods.</p>
+<pre><code class="lang-csharp">public class Rock { }
+
+Ops.Foo(new Rock()); // error IFITQUACKS001: Type 'Rock' does not structurally satisfy 'IDoable'
+</code></pre>
+<h2 id="ifitquacks002">IFITQUACKS002</h2>
+<p><strong>Duck-typed method's containing type must be partial</strong></p>
+<p>The generator adds a fallback overload to the containing type, so it (and every enclosing type) has to be <code>partial</code>.</p>
+<h2 id="ifitquacks003">IFITQUACKS003</h2>
+<p><strong>Duck-typed method needs an interface parameter</strong></p>
+<p>None of the parameters of a <code>[DuckTyped]</code> method is an interface passed by value.</p>
+<h2 id="ifitquacks004">IFITQUACKS004</h2>
+<p><strong>Unsupported [DuckTyped] method signature</strong></p>
+<p>Reported when</p>
+<ul>
+<li>the containing type (or one of its enclosing types) is generic,</li>
+<li>the method is overloaded by another <code>[DuckTyped]</code> method of the same name in the same type,</li>
+<li>the method is overloaded by a generic method with the signature of its generated fallback overload, e.g. <code>Greet&lt;T&gt;(T value)</code> next to <code>Greet(INamed n)</code>,</li>
+<li>a base type has an accessible method of the same name, which the generated fallback would hide (overload resolution ignores a base type's methods once one of the derived type applies, so <code>OverloadResolutionPriorityAttribute</code> can't help); this includes the methods of <code>object</code>, e.g. a <code>[DuckTyped]</code> method named <code>Equals</code>,</li>
+<li>the method is overloaded by a regular method of the same name, but the project uses a language version below C# 13, which is needed for <code>OverloadResolutionPriorityAttribute</code> to keep the generated fallback from taking that overload's calls (on .NET 8, set <code>&lt;LangVersion&gt;13&lt;/LangVersion&gt;</code>),</li>
+<li>the containing type is an interface or a <code>file</code>-local type,</li>
+<li>a type parameter of a generic method is not used by any interface parameter (it can't be inferred), or</li>
+<li>the method mixes interface parameters with <a href="getting_started.html#static-members-and-operators">duck-typed constraints</a>, or not all of its type parameters have a single interface constraint used by a parameter.</li>
+</ul>
+<h2 id="ifitquacks005">IFITQUACKS005</h2>
+<p><strong>Unsupported interface member</strong></p>
+<p>The interface contains a member an adapter can't implement: a generic method (<code>U Map&lt;U&gt;()</code>), or a <code>static abstract</code> member outside a <a href="getting_started.html#static-members-and-operators">duck-typed constraint</a>. For a duck-typed constraint it is reported for an unsupported operator and for instance members whose signature uses the self type. It is reported on every argument that would need an adapter; types implementing the interface are fine.</p>
+<pre><code class="lang-csharp">public interface IMapper { U Map&lt;U&gt;(); }
+
+Ops.Run(new Mapper()); // error IFITQUACKS005
+</code></pre>
+<h2 id="ifitquacks006">IFITQUACKS006</h2>
+<p><strong>Unsupported struct argument</strong></p>
+<p>The argument is a mutable struct or a ref struct. A mutable struct would be copied into the adapter, so mutations made through the interface would be lost silently. A ref struct can't be converted to an interface at all. Use a class, a <code>readonly struct</code>, or let the struct implement the interface. See <a href="known_limitations.html#structs">Known limitations</a>.</p>
+<pre><code class="lang-csharp">public struct Counter { public int Count { get; private set; } public void Increment() =&gt; Count++; }
+
+Ops.Bump(new Counter()); // error IFITQUACKS006
+</code></pre>
+<p>For ref structs the compiler additionally reports <code>CS9244</code>, because the generated fallback overload can't accept a ref struct.</p>
+<h2 id="ifitquacks007">IFITQUACKS007</h2>
+<p><strong>Duck conversion target must be an interface</strong></p>
+<p><code>Duck.As</code>, <code>Duck.Stub</code> and <code>Duck.Merge</code> only convert to interfaces. This is also reported for type parameters, because the target can't be verified at compile time. <code>Duck.To</code> is the one that takes a concrete type.</p>
+<pre><code class="lang-csharp">public class Duckling { }
+
+var duckling = Duck.As&lt;Duckling&gt;(new A()); // error IFITQUACKS007
+</code></pre>
+<h2 id="ifitquacks008">IFITQUACKS008</h2>
+<p><strong>Unsupported duck-typed call</strong></p>
+<p>The call itself can't be redirected, whatever its arguments are. So far this is only a <code>base</code> call: it invokes the method non-virtually, which neither an interceptor nor the generated fallback overload can reproduce - both would end up in the overriding method.</p>
+<pre><code class="lang-csharp">public override string Greet(INamed named) =&gt; &quot;derived&quot;;
+public string ViaBase() =&gt; base.Greet(new Person()); // error IFITQUACKS008
+</code></pre>
+<p>Pass a value already typed as the interface, or call the method without <code>base</code>.</p>
+<h2 id="ifitquacks009">IFITQUACKS009</h2>
+<p><strong>Unsupported Duck.To target</strong></p>
+<p><code>Duck.To&lt;TTarget&gt;</code> can't build the target from the source: the target is abstract, an interface (use <a href="getting_started.html#converting-explicitly"><code>Duck.As</code></a> instead), has no accessible constructor that the source can fill, or has a member the source has no counterpart for.</p>
+<pre><code class="lang-csharp">public record PersonDto(string Name, int Age);
+public class OnlyName { public string Name { get; set; } = &quot;&quot;; }
+
+Duck.To&lt;PersonDto&gt;(new OnlyName()); // error IFITQUACKS009: no member of the source fills 'Age'
+</code></pre>
+<h2 id="ifitquacks010">IFITQUACKS010</h2>
+<p><strong>Mapped shape target must be a partial interface</strong></p>
+<p><code>[DuckShape&lt;T&gt;]</code> fills a second declaration of the interface, so the interface - and every type around it - has to be <code>partial</code>. A generic or <code>file</code>-local containing type is reported as well.</p>
+<pre><code class="lang-csharp">[DuckShape&lt;Customer&gt;]
+public interface ICustomerView;   // error IFITQUACKS010: it is not declared 'partial'
+</code></pre>
+<h2 id="ifitquacks011">IFITQUACKS011</h2>
+<p><strong>Unsupported [DuckShape&lt;&gt;] usage</strong></p>
+<p>The mapping can't be applied: <code>Pick</code> and <code>Omit</code> are both set, a name in <code>Pick</code> or <code>Omit</code> is not a public instance member of the source, the source is not a named class, struct, record or interface, the mapping derives no member at all, or a derived member's type is less accessible than the interface.</p>
+<pre><code class="lang-csharp">[DuckShape&lt;Customer&gt;(Omit = [&quot;Nope&quot;])]
+public partial interface ICustomerView;   // error IFITQUACKS011: 'Nope' is not a public instance member of the source
+</code></pre>
+<p>See <a href="mapped_shapes.html">Mapped shapes</a>.</p>
+<h2 id="ifitquacks012">IFITQUACKS012</h2>
+<p><strong>Duck-typed parameter is cast to a concrete type</strong> (warning)</p>
+<p>An argument that only matches the interface structurally is wrapped in a generated adapter, and that adapter is what your method receives. With a <a href="constrained_duck_typing.html">duck-typed constraint</a>, <code>T</code> is the adapter type itself. A cast, <code>as</code> or type pattern on the parameter for a concrete type, typically the caller's own type, therefore fails for these calls. It succeeds for arguments that implement the interface, so the method behaves differently depending on the caller.</p>
+<pre><code class="lang-csharp">[DuckTyped]
+public static string Describe(INamed named) =&gt;
+    named is Person p ? p.Nickname : named.Name; // warning IFITQUACKS012: Whenever the argument doesn't implement 'INamed' itself,
+                                                 // 'named' receives a generated adapter instead of the caller's instance, so this
+                                                 // type test for 'Person' never succeeds for such calls; use 'Duck.Unwrap(named)'
+                                                 // to get the original instance
+</code></pre>
+<p>Conversion operators can't bridge this: C# doesn't allow user-defined conversions from an interface, and inside a generic method the compiler doesn't know the adapter type. Test the original instance instead:</p>
+<pre><code class="lang-csharp">Duck.Unwrap(named) is Person p ? p.Nickname : named.Name;
+</code></pre>
+<p>Casts and type tests for interfaces and type parameters are not reported, because the adapter may implement those.</p>
+
+</article>
+
+        <div class="contribution d-print-none">
+          <a href="https://github.com/linkdotnet/IfItQuacks/blob/main/docs/site/articles/diagnostics.md/#L1" class="edit-link">Edit this page</a>
+        </div>
+
+        <div class="next-article d-print-none border-top" id="nextArticle"></div>
+
+      </div>
+
+      <div class="affix">
+        <nav id="affix"></nav>
+      </div>
+    </main>
+
+    <div class="container-xxl search-results" id="search-results"></div>
+
+    <footer class="border-top text-secondary">
+      <div class="container-xxl">
+        <div class="flex-fill">
+          <span>Made with <a href="https://dotnet.github.io/docfx">docfx</a></span>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>
