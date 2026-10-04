@@ -12,10 +12,12 @@ All diagnostics are in the `IfItQuacks` category and reported as errors, except 
 
 The argument's type is missing a member of the interface, or a member has an incompatible type (see [Matching an interface](getting_started.md#matching-an-interface)), no public getter/setter or is a `readonly` field where the interface declares a setter. It is also reported for anonymous types passed to generic `[DuckTyped]` methods, and for anonymous types with a property whose type contains another anonymous type as a type argument or array element. For generic `[DuckTyped]` methods this is also reported when the type arguments can't be inferred from the argument. The compiler reports `CS0411` in addition, because no generic fallback overload exists for these methods.
 
-```csharp
-public class Rock { }
+The message lists every member that doesn't fit, and points out a member that exists but is not public, is static or differs only in casing:
 
-Ops.Foo(new Rock()); // error IFITQUACKS001: Type 'Rock' does not structurally satisfy 'IDoable'
+```csharp
+public class Rock { public void do() { } }
+
+Ops.Foo(new Rock()); // error IFITQUACKS001: Type 'Rock' does not structurally satisfy 'IDoable': missing method 'void IDoable.Do()' - did you mean 'do'?
 ```
 
 ## IFITQUACKS002

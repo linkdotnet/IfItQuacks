@@ -148,7 +148,7 @@ Every enumeration allocates one wrapper plus one adapter per element, so a seque
 [DuckShape<Customer>(Omit = ["Nope"])] public partial interface ITypo;                // IFITQUACKS011: unknown member
 ```
 
-Public **fields** of the source are not derived, and neither are static members, generic methods or `init`-only setters. Nothing is shaped recursively: a derived `Address` member keeps its own type. Because `[DuckShape<T>]` is a generic attribute, the consuming project needs C# 11 or later. See [Mapped shapes](mapped_shapes.md).
+Static members, generic methods and `init`-only setters of the source are not derived; public fields become properties. Nothing is shaped recursively: a derived `Address` member keeps its own type. Because `[DuckShape<T>]` is a generic attribute, the consuming project needs C# 11 or later. See [Mapped shapes](mapped_shapes.md).
 
 ## Copying with `Duck.To`
 

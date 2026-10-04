@@ -107,9 +107,7 @@ public partial interface ICustomerName
 
 - The target must be a `partial interface`, and so must every type around it
   ([`IFITQUACKS010`](diagnostics.md#ifitquacks010)).
-- **Public fields of the source are not derived.** Only properties are, plus methods, events and
-  indexers under `IncludeMethods`. (A field on the *argument* still satisfies a derived property, as
-  everywhere else in IfItQuacks.)
+- Public fields of the source are derived as properties, with a setter unless the field is `readonly`.
 - Static members, generic methods and `init`-only setters are not derived.
 - A member whose type is less accessible than the interface is reported
   ([`IFITQUACKS011`](diagnostics.md#ifitquacks011)), as is an unknown `Pick`/`Omit` name, `Pick` and

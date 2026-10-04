@@ -85,6 +85,9 @@ internal static class MappedShapeEmitter
             case IPropertySymbol property:
                 code.AppendLine($"{TypeName(property.Type, option)} {property.Name} {{ {Accessors(property, option)}}}");
                 break;
+            case IFieldSymbol field:
+                code.AppendLine($"{TypeName(field.Type, option)} {field.Name} {{ get; {(option.Readonly || field.IsReadOnly ? "" : "set; ")}}}");
+                break;
             case IMethodSymbol method:
                 code.AppendLine($"{TypeName(method.ReturnType, option, optionalPosition: false)} {method.Name}({Parameters(method.Parameters)});");
                 break;

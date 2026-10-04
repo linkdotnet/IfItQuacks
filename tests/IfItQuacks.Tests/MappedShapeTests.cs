@@ -83,6 +83,108 @@ public class MappedShapeTests
         Assert.Equal("1/Steven|2/Donald|3/Daisy", GeneratorTestHelper.CompileAndRun(source));
     }
 
+    private const string Legacy = """
+        using IfItQuacks;
+
+        public class Legacy
+        {
+            public int Id = 1;
+            public string Name = "Steven";
+            public readonly string Code = "C1";
+        }
+        """;
+
+    [Fact]
+    public void PublicFields_AreDerivedAsProperties_ReadonlyFieldsWithoutSetter()
+    {
+        const string source = Legacy + """
+            [DuckShape<Legacy>]
+            public partial interface ILegacyView;
+
+            public static partial class Ops
+            {
+                [DuckTyped]
+                public static string Rename(ILegacyView view) { view.Name = "Donald"; return $"{view.Id}/{view.Name}/{view.Code}"; }
+            }
+
+            public static class Entry { public static string Run() => Ops.Rename(new Legacy()); }
+            """;
+
+        Assert.Equal("1/Donald/C1", GeneratorTestHelper.CompileAndRun(source));
+    }
+
+    [Fact]
+    public void DerivedFields_AreSatisfiedByTheSourceADtoAndAnAnonymousType()
+    {
+        const string source = Legacy + """
+            public record LegacyDto(int Id, string Name);
+
+            [DuckShape<Legacy>(Pick = [nameof(Legacy.Id), nameof(Legacy.Name)], Readonly = true)]
+            public partial interface ILegacyKey;
+
+            public static partial class Ops
+            {
+                [DuckTyped]
+                public static string Render(ILegacyKey key) => $"{key.Id}/{key.Name}";
+            }
+
+            public static class Entry
+            {
+                public static string Run() =>
+                    Ops.Render(new Legacy()) + "|" + Ops.Render(new LegacyDto(2, "Donald")) + "|" + Ops.Render(new { Id = 3, Name = "Daisy" });
+            }
+            """;
+
+        Assert.Equal("1/Steven|2/Donald|3/Daisy", GeneratorTestHelper.CompileAndRun(source));
+    }
+
+    [Fact]
+    public void Optional_MakesDerivedFieldsNullable()
+    {
+        const string source = Legacy + """
+            [DuckShape<Legacy>(Omit = [nameof(Legacy.Name), nameof(Legacy.Code)], Optional = true, Readonly = true)]
+            public partial interface ILegacyPatch;
+
+            public static partial class Ops
+            {
+                [DuckTyped]
+                public static string Render(ILegacyPatch patch) => patch.Id?.ToString() ?? "-";
+            }
+
+            public static class Entry
+            {
+                public static string Run() => Ops.Render(new Legacy()) + "|" + Ops.Render(new { Id = (int?)null });
+            }
+            """;
+
+        Assert.Equal("1|-", GeneratorTestHelper.CompileAndRun(source));
+    }
+
+    [Theory]
+    [InlineData(Customer, "Customer")]
+    [InlineData(Legacy, "Legacy")]
+    public void DerivedShape_WorksWithDuckStubAndDuckMerge(string types, string sourceType)
+    {
+        var source = types + $$"""
+            [DuckShape<{{sourceType}}>(Pick = ["Id", "Name"], Readonly = true)]
+            public partial interface IKey;
+
+            public static class Entry
+            {
+                public static string Run()
+                {
+                    var stub = Duck.Stub<IKey>(new { Id = 2 });
+                    string missing;
+                    try { missing = stub.Name; } catch (DuckStubException) { missing = "stubbed"; }
+                    var merged = Duck.Merge<IKey>(new { Id = 3 }, new {{sourceType}}());
+                    return $"{stub.Id}/{missing}|{merged.Id}/{merged.Name}";
+                }
+            }
+            """;
+
+        Assert.Equal("2/stubbed|3/Steven", GeneratorTestHelper.CompileAndRun(source));
+    }
+
     [Fact]
     public void Readonly_DropsSetters()
     {

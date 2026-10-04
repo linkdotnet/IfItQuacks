@@ -71,6 +71,8 @@ internal sealed record MappedShape(INamedTypeSymbol Shape, ImmutableArray<ISymbo
         {
             IPropertySymbol { IsIndexer: true } => includeMethods,
             IPropertySymbol => true,
+            // Backing fields of auto-properties and records are implicitly declared.
+            IFieldSymbol { IsConst: false, IsImplicitlyDeclared: false } => true,
             IMethodSymbol { MethodKind: MethodKind.Ordinary, IsGenericMethod: false } => includeMethods,
             IEventSymbol => includeMethods,
             _ => false,
@@ -86,5 +88,10 @@ internal sealed record MappedShape(INamedTypeSymbol Shape, ImmutableArray<ISymbo
     public static string Nullable(string typeName) => typeName.EndsWith("?", StringComparison.Ordinal) ? typeName : typeName + "?";
 
     private static bool IsOptionalPosition(ISymbol member, ITypeSymbol type) =>
-        member is IPropertySymbol property && SymbolEqualityComparer.Default.Equals(property.Type, type);
+        member switch
+        {
+            IPropertySymbol property => SymbolEqualityComparer.Default.Equals(property.Type, type),
+            IFieldSymbol field => SymbolEqualityComparer.Default.Equals(field.Type, type),
+            _ => false,
+        };
 }

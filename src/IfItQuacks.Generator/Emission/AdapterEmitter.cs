@@ -60,10 +60,12 @@ internal static class AdapterEmitter
         code.AppendLine($"    internal readonly struct {adapterName} : global::{shape.ToDisplayString()}, global::IfItQuacks.IDuckAdapter");
         code.AppendLine("    {");
 
+        var mapped = MappedShape.TryGet(shape);
+        var explicitInterfaceName = ExplicitInterfaceNameFor(shape, mapped);
         if (concreteType is null)
         {
             code.AppendLine("        object? global::IfItQuacks.IDuckAdapter.Value => null;");
-            EmitStubMembers(code, ShapeMatcher.GetShapeMembers(shape).Where(ShapeMatcher.IsRequired));
+            EmitStubMembers(code, ShapeMatcher.GetShapeMembers(shape).Where(ShapeMatcher.IsRequired), explicitInterfaceName, mapped);
         }
         else
         {
@@ -77,7 +79,7 @@ internal static class AdapterEmitter
             code.AppendLine("        object? global::IfItQuacks.IDuckAdapter.Value => _value;");
 
             EmitInstanceMembers(code, shape, concreteType, receiver, compilation, ExplicitInterfaceName);
-            EmitStubMembers(code, ShapeMatcher.FindUnimplementedMembers(shape, concreteType, compilation));
+            EmitStubMembers(code, ShapeMatcher.FindUnimplementedMembers(shape, concreteType, compilation), explicitInterfaceName, mapped);
             EmitIdentityMembers(code, concreteType, adapterName);
 
             if (concreteType.IsAnonymousType)
@@ -88,7 +90,7 @@ internal static class AdapterEmitter
         return code.ToString();
     }
 
-    private static void EmitStubMembers(StringBuilder code, IEnumerable<ISymbol> members)
+    private static void EmitStubMembers(StringBuilder code, IEnumerable<ISymbol> members, Func<ISymbol, string> explicitInterfaceName, MappedShape? mapped)
     {
         foreach (var member in members)
         {
@@ -96,26 +98,35 @@ internal static class AdapterEmitter
             switch (member)
             {
                 case IMethodSymbol method:
-                    code.AppendLine($"        {SourceSyntax.RefReturnPrefix(method.RefKind)}{method.ReturnType.ToDisplayString()} {ExplicitInterfaceName(method)}.{method.Name}{TypeParameters(method)}({FormatParameters(method.Parameters)}) => {thrown};");
+                    code.AppendLine($"        {SourceSyntax.RefReturnPrefix(method.RefKind)}{MemberType(method, method.ReturnType, mapped)} {explicitInterfaceName(method)}.{method.Name}{TypeParameters(method)}({FormatParameters(method.Parameters)}) => {thrown};");
                     break;
                 case IPropertySymbol { IsIndexer: true } indexer:
-                    code.Append($"        {SourceSyntax.RefReturnPrefix(indexer.RefKind)}{indexer.Type.ToDisplayString()} {ExplicitInterfaceName(indexer)}.this[{FormatParameters(indexer.Parameters)}] {{ ");
+                    code.Append($"        {SourceSyntax.RefReturnPrefix(indexer.RefKind)}{MemberType(indexer, indexer.Type, mapped)} {explicitInterfaceName(indexer)}.this[{FormatParameters(indexer.Parameters)}] {{ ");
                     if (indexer.GetMethod is not null) code.Append($"get => {thrown}; ");
-                    if (indexer.SetMethod is { } indexerSetter) code.Append($"{SetterKeyword(indexerSetter)} => {thrown}; ");
+                    if (indexer.SetMethod is { } indexerSetter && KeepsSetter(indexer, indexerSetter, mapped)) code.Append($"{SetterKeyword(indexerSetter)} => {thrown}; ");
                     code.AppendLine("}");
                     break;
                 case IPropertySymbol property:
-                    code.Append($"        {SourceSyntax.RefReturnPrefix(property.RefKind)}{property.Type.ToDisplayString()} {ExplicitInterfaceName(property)}.{property.Name} {{ ");
+                    code.Append($"        {SourceSyntax.RefReturnPrefix(property.RefKind)}{MemberType(property, property.Type, mapped)} {explicitInterfaceName(property)}.{property.Name} {{ ");
                     if (property.GetMethod is not null) code.Append($"get => {thrown}; ");
-                    if (property.SetMethod is { } setter) code.Append($"{SetterKeyword(setter)} => {thrown}; ");
+                    if (property.SetMethod is { } setter && KeepsSetter(property, setter, mapped)) code.Append($"{SetterKeyword(setter)} => {thrown}; ");
+                    code.AppendLine("}");
+                    break;
+                case IFieldSymbol field:
+                    code.Append($"        {MemberType(field, field.Type, mapped)} {explicitInterfaceName(field)}.{field.Name} {{ get => {thrown}; ");
+                    if (!field.IsReadOnly && (mapped is null || mapped.KeepsSetter(field))) code.Append($"set => {thrown}; ");
                     code.AppendLine("}");
                     break;
                 case IEventSymbol @event:
-                    code.AppendLine($"        event {@event.Type.ToDisplayString()} {ExplicitInterfaceName(@event)}.{@event.Name} {{ add => {thrown}; remove => {thrown}; }}");
+                    code.AppendLine($"        event {@event.Type.ToDisplayString()} {explicitInterfaceName(@event)}.{@event.Name} {{ add => {thrown}; remove => {thrown}; }}");
                     break;
             }
         }
     }
+
+    // A derived init-only setter is declared without a setter in the generated interface.
+    private static bool KeepsSetter(IPropertySymbol property, IMethodSymbol setter, MappedShape? mapped) =>
+        mapped is null || (mapped.KeepsSetter(property) && !setter.IsInitOnly);
 
     private static string MemberName(ISymbol member) =>
         member.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
@@ -131,10 +142,7 @@ internal static class AdapterEmitter
         // the signature it carries both come from the mapping, not from the symbol itself.
         var mapped = MappedShape.TryGet(shape);
         if (mapped is not null)
-        {
-            var shapeName = shape.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            explicitInterfaceName = _ => shapeName;
-        }
+            explicitInterfaceName = ExplicitInterfaceNameFor(shape, mapped);
 
         foreach (var member in ShapeMatcher.GetShapeMembers(shape))
         {
@@ -144,6 +152,16 @@ internal static class AdapterEmitter
 
             EmitMember(code, member, counterpart, Qualify(receiver, concreteType, counterpart), explicitInterfaceName, mapped);
         }
+    }
+
+    // A [DuckShape<>] member is a symbol of the source type, so it is implemented for the mapped interface, not its containing type.
+    private static Func<ISymbol, string> ExplicitInterfaceNameFor(INamedTypeSymbol shape, MappedShape? mapped)
+    {
+        if (mapped is null)
+            return ExplicitInterfaceName;
+
+        var shapeName = shape.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        return _ => shapeName;
     }
 
     private static void EmitMember(StringBuilder code, ISymbol member, ISymbol counterpart, string receiver, Func<ISymbol, string> explicitInterfaceName,
@@ -162,6 +180,9 @@ internal static class AdapterEmitter
                 break;
             case IPropertySymbol property:
                 EmitProperty(code, property, receiver, explicitInterfaceName, mapped);
+                break;
+            case IFieldSymbol field:
+                EmitDerivedField(code, field, receiver, explicitInterfaceName, mapped);
                 break;
             case IEventSymbol @event:
                 EmitEvent(code, @event, receiver, explicitInterfaceName);
@@ -191,9 +212,11 @@ internal static class AdapterEmitter
         code.AppendLine($"        public {adapterName}({parameters}) {{ {assignments} }}");
         code.AppendLine("        object? global::IfItQuacks.IDuckAdapter.Value => _value0;");
 
+        var mapped = MappedShape.TryGet(shape);
+        var explicitInterfaceName = ExplicitInterfaceNameFor(shape, mapped);
         foreach (var member in ShapeMatcher.GetShapeMembers(shape))
         {
-            var source = FindSource(sources, member, compilation);
+            var source = FindSource(sources, member, compilation, mapped);
             if (source is not { } found)
                 continue;
 
@@ -203,7 +226,7 @@ internal static class AdapterEmitter
             receiver = found.Counterpart.ContainingType.TypeKind == TypeKind.Interface
                 ? $"((global::{found.Counterpart.ContainingType.ToDisplayString()}){receiver})"
                 : Qualify(receiver, sources[found.Index], found.Counterpart);
-            EmitMember(code, member, found.Counterpart, receiver, ExplicitInterfaceName);
+            EmitMember(code, member, found.Counterpart, receiver, explicitInterfaceName, mapped);
         }
 
         EmitMergeIdentityMembers(code, sources, adapterName);
@@ -218,13 +241,15 @@ internal static class AdapterEmitter
     /// <summary>
     /// The first source implementing <paramref name="member"/>'s interface, else the first providing it structurally, or <c>null</c> if none does.
     /// </summary>
-    public static (int Index, ISymbol Counterpart)? FindSource(ImmutableArray<INamedTypeSymbol> sources, ISymbol member, Compilation compilation)
+    public static (int Index, ISymbol Counterpart)? FindSource(ImmutableArray<INamedTypeSymbol> sources, ISymbol member, Compilation compilation,
+        MappedShape? mapped = null)
     {
-        for (var i = 0; i < sources.Length; i++)
+        // A derived member's containing type is the [DuckShape<>] source, which no value has to implement.
+        for (var i = 0; i < sources.Length && mapped?.IsDerived(member) != true; i++)
             if (Implements(sources[i], member.ContainingType))
                 return (i, member);
         for (var i = 0; i < sources.Length; i++)
-            if (ShapeMatcher.FindCounterpart(member, sources[i], compilation) is { } counterpart)
+            if (ShapeMatcher.FindCounterpart(member, sources[i], compilation, mapped) is { } counterpart)
                 return (i, counterpart);
         return null;
     }
@@ -263,8 +288,18 @@ internal static class AdapterEmitter
     {
         code.Append($"        {SourceSyntax.RefReturnPrefix(property.RefKind)}{MemberType(property, property.Type, mapped)} {explicitInterfaceName(property)}.{property.Name} {{ ");
         if (property.GetMethod is not null) code.Append($"get => {RefExpressionPrefix(property.RefKind)}{receiver}.{property.Name}; ");
-        if (property.SetMethod is { } setter && (mapped is null || (mapped.KeepsSetter(property) && !setter.IsInitOnly)))
+        if (property.SetMethod is { } setter && KeepsSetter(property, setter, mapped))
             code.Append($"{SetterKeyword(setter)} => {receiver}.{property.Name} = value; ");
+        code.AppendLine("}");
+    }
+
+    // A field derived by [DuckShape<>] is a property of the generated interface.
+    private static void EmitDerivedField(StringBuilder code, IFieldSymbol field, string receiver, Func<ISymbol, string> explicitInterfaceName,
+        MappedShape? mapped)
+    {
+        code.Append($"        {MemberType(field, field.Type, mapped)} {explicitInterfaceName(field)}.{field.Name} {{ get => {receiver}.{field.Name}; ");
+        if (!field.IsReadOnly && (mapped is null || mapped.KeepsSetter(field)))
+            code.Append($"set => {receiver}.{field.Name} = value; ");
         code.AppendLine("}");
     }
 
@@ -274,7 +309,7 @@ internal static class AdapterEmitter
         var args = string.Join(", ", indexer.Parameters.Select(SourceSyntax.Argument));
         code.Append($"        {SourceSyntax.RefReturnPrefix(indexer.RefKind)}{MemberType(indexer, indexer.Type, mapped)} {explicitInterfaceName(indexer)}.this[{FormatParameters(indexer.Parameters)}] {{ ");
         if (indexer.GetMethod is not null) code.Append($"get => {RefExpressionPrefix(indexer.RefKind)}{receiver}[{args}]; ");
-        if (indexer.SetMethod is { } setter && (mapped is null || (mapped.KeepsSetter(indexer) && !setter.IsInitOnly)))
+        if (indexer.SetMethod is { } setter && KeepsSetter(indexer, setter, mapped))
             code.Append($"{SetterKeyword(setter)} => {receiver}[{args}] = value; ");
         code.AppendLine("}");
     }

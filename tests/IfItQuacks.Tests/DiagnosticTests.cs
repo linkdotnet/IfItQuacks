@@ -84,6 +84,32 @@ public class DiagnosticTests
     }
 
     [Theory]
+    [InlineData("public class C { }", new[] { "missing property 'Name' of type 'string'", "missing method 'void IShape.Run(int x)'" })]
+    [InlineData("public class C { public string name => \"\"; public void run(int x) { } }", new[] { "did you mean 'name'?", "did you mean 'run'?" })]
+    [InlineData("public class C { private string Name => \"\"; public static void Run(int x) { } }", new[] { "('Name' is not public)", "('Run' is static)" })]
+    [InlineData("public class C { public string Name => \"\"; public void Run(string x) { } }", new[] { "method 'void C.Run(string x)' doesn't match 'void IShape.Run(int x)'" })]
+    public void StructuralMismatch_ListsEveryMemberWithItsLikelyCause(string declaration, string[] expected)
+    {
+        var source = $$"""
+            using IfItQuacks;
+
+            public interface IShape { string Name { get; } void Run(int x); }
+
+            {{declaration}}
+
+            public static class Entry
+            {
+                public static IShape Run() => Duck.As<IShape>(new C());
+            }
+            """;
+
+        var (_, diagnostics) = GeneratorTestHelper.RunGenerator(source);
+
+        var message = Assert.Single(diagnostics, d => d.Id == "IFITQUACKS001").GetMessage(CultureInfo.InvariantCulture);
+        Assert.All(expected, part => Assert.Contains(part, message, StringComparison.Ordinal));
+    }
+
+    [Theory]
     [InlineData("(Person)(object)n", true)]
     [InlineData("n as Person", true)]
     [InlineData("n is Person", true)]

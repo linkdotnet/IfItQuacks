@@ -120,12 +120,15 @@ internal static class DuckConversionAnalysis
 
         var compilation = semanticModel.Compilation;
         var merged = sources.ToImmutable();
-        if (ShapeMatcher.GetShapeMembers(shape).Where(ShapeMatcher.IsRequired)
-                .FirstOrDefault(m => AdapterEmitter.FindSource(merged, m, compilation) is null) is { } missing)
+        var mapped = MappedShape.TryGet(shape);
+        var missing = ShapeMatcher.GetShapeMembers(shape).Where(ShapeMatcher.IsRequired)
+            .Where(m => AdapterEmitter.FindSource(merged, m, compilation, mapped) is null)
+            .Select(m => $"no value provides '{m.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}'")
+            .ToList();
+        if (missing.Count > 0)
         {
             return CallSiteOutput.ForDiagnostics([Diagnostic.Create(Diagnostics.ShapeMismatch, invocation.GetLocation(),
-                string.Join("' + '", merged.Select(s => s.ToDisplayString())), shape.ToDisplayString(),
-                $"no value provides '{missing.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}'")]);
+                string.Join("' + '", merged.Select(s => s.ToDisplayString())), shape.ToDisplayString(), string.Join("; ", missing))]);
         }
 
         if (semanticModel.GetInterceptableLocation(invocation, ct) is not { } location)

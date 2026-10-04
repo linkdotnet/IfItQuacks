@@ -6,6 +6,20 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 ## [Unreleased]
 
+### Added
+
+- `[DuckShape<T>]` derives the public fields of the source as properties, with a setter unless the field is `readonly`.
+
+### Changed
+
+- `IFITQUACKS001` lists every member that doesn't fit instead of only the first, and says when a member of that name
+  exists but is not public, is static, has another signature or differs only in casing (`did you mean 'name'?`).
+
+### Fixed
+
+- `Duck.Stub` and `Duck.Merge` on a `[DuckShape<T>]` interface failed the build with `CS0538`/`CS0535` in generated
+  code, and `Duck.Merge` ignored `Readonly` and `Optional` and preferred a value of the source type over the first one.
+
 ## [v1.5.4] - 2026-09-25
 
 ### Changed
