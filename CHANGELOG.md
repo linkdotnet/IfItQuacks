@@ -6,6 +6,8 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 ## [Unreleased]
 
+## [v1.6.0] - 2026-10-12
+
 ### Added
 
 - Code fixes, shipped as `IfItQuacks.CodeFixes.dll` next to the generator: make the type `partial` for `IFITQUACKS002` and
@@ -242,7 +244,8 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 - Anonymous types can be passed to `[DuckTyped]` methods and `Duck.As`.
 - Adapters forward `Equals`, `GetHashCode` and `ToString` to the wrapped instance; `Duck.Unwrap` returns it.
 
-[unreleased]: https://github.com/linkdotnet/IfItQuacks/compare/v1.5.5...HEAD
+[unreleased]: https://github.com/linkdotnet/IfItQuacks/compare/v1.6.0...HEAD
+[v1.6.0]: https://github.com/linkdotnet/IfItQuacks/compare/v1.5.5...v1.6.0
 [v1.5.5]: https://github.com/linkdotnet/IfItQuacks/compare/v1.5.4...v1.5.5
 [v1.5.4]: https://github.com/linkdotnet/IfItQuacks/compare/v1.5.3...v1.5.4
 [v1.5.3]: https://github.com/linkdotnet/IfItQuacks/compare/v1.5.2...v1.5.3
