@@ -253,4 +253,36 @@ public class DelegateTests
 
         Assert.Equal(9, GeneratorTestHelper.CompileAndRun(source));
     }
+
+    [Fact]
+    public void MethodGroup_WithARegularOverloadDeclaredFirst_StillGoesToTheDuckTypedMethod()
+    {
+        const string source = """
+            using System;
+            using IfItQuacks;
+
+            public interface INamed { string Name { get; } }
+            public interface IWheeled { int Wheels { get; } }
+            public class Car { public string Name => "Car"; public int Wheels => 4; }
+
+            public static partial class Ops
+            {
+                public static string Describe(IWheeled wheeled) => $"wheels:{wheeled.Wheels}";
+
+                [DuckTyped]
+                public static string Describe(INamed named) => $"duck:{named.Name}";
+            }
+
+            public static class Entry
+            {
+                public static string Run()
+                {
+                    Func<Car, string> describe = Ops.Describe;
+                    return describe(new Car());
+                }
+            }
+            """;
+
+        Assert.Equal("duck:Car", GeneratorTestHelper.CompileAndRun(source));
+    }
 }

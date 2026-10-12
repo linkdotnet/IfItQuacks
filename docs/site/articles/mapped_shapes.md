@@ -55,7 +55,7 @@ Render(new { Id = 3, Name = "Daisy", Email = "" });       // an object literal
 | `Omit` | `Omit<T, K>` | Derives every member except the named ones. |
 | `Optional` | `Partial<T>` | Makes every derived property nullable. |
 | `Readonly` | `Readonly<T>` | Drops the setters of the derived properties and indexers. |
-| `IncludeMethods` | - | Derives methods, events and indexers as well. |
+| `IncludeMethods` | - | Derives methods, events and indexers as well, except the members of `object` (and their overrides) and those a record synthesizes. |
 | several attributes | `A & B` | Intersects: every member of every source is derived into the same interface. |
 
 `Pick` and `Omit` are mutually exclusive, and both take member names - use `nameof` so a rename keeps

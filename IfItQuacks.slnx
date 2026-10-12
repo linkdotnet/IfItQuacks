@@ -29,6 +29,7 @@
     <Project Path="samples/IfItQuacks.Sample.Testing/IfItQuacks.Sample.Testing.csproj" />
   </Folder>
   <Folder Name="/src/">
+    <Project Path="src/IfItQuacks.CodeFixes/IfItQuacks.CodeFixes.csproj" />
     <Project Path="src/IfItQuacks.Generator/IfItQuacks.Generator.csproj" />
   </Folder>
   <Folder Name="/tests/">

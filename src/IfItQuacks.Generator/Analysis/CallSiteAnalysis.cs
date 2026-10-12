@@ -26,7 +26,8 @@ internal static class CallSiteAnalysis
 
         if (DuckTypedMethodLookup.Find(semanticModel, invocation, candidates, duckMethods, ct) is not { } target)
         {
-            return symbolInfo.Symbol is IMethodSymbol overload && OverloadRedirectAnalysis.FindDuckTypedOverload(overload, duckMethods) is { } duckMethod
+            return symbolInfo.Symbol is IMethodSymbol overload &&
+                   OverloadRedirectAnalysis.FindDuckTypedOverload(overload, DuckTypedMethodLookup.GetReceiverType(semanticModel, invocation, ct), duckMethods, compilation) is { } duckMethod
                 ? OverloadRedirectAnalysis.Analyze(semanticModel, invocation, overload, duckMethod, ct)
                 : null;
         }

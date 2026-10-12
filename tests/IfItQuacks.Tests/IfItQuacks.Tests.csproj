@@ -9,10 +9,12 @@
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\IfItQuacks.Generator\IfItQuacks.Generator.csproj" />
+    <ProjectReference Include="..\..\src\IfItQuacks.CodeFixes\IfItQuacks.CodeFixes.csproj" />
   </ItemGroup>
 
 </Project>

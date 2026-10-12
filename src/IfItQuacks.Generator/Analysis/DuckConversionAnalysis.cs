@@ -162,11 +162,12 @@ internal static class DuckConversionAnalysis
         if (semanticModel.GetInterceptableLocation(invocation, ct) is not { } location)
             return null;
 
-        var factoryName = StructuralCopyEmitter.GetFactoryName(target, source);
-        var factory = new GeneratedFile(factoryName, StructuralCopyEmitter.Emit(target, source, factoryName, compilation));
+        var factories = new GeneratedAdapters();
+        foreach (var factory in StructuralCopyEmitter.Emit(target, source, compilation))
+            factories.Add(factory);
         var interceptor = InterceptorEmitter.ForConversion(location, target.ToDisplayString(), "object value",
-            $"global::{GeneratedCode.Namespace}.{factoryName}.Create({FromObject(source, "value")})");
-        return CallSiteOutput.ForInterceptor(interceptor, factory);
+            $"global::{GeneratedCode.Namespace}.{StructuralCopyEmitter.GetFactoryName(target, source)}.Create({FromObject(source, "value")})");
+        return factories.WithInterceptor(interceptor);
     }
 
     private static INamedTypeSymbol? GetShape(IMethodSymbol conversion) =>

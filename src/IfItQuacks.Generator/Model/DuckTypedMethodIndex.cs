@@ -25,7 +25,8 @@ internal sealed class DuckTypedMethodIndex : IEquatable<DuckTypedMethodIndex>
 
     public bool ContainsName(string name) => _names.Contains(name);
 
-    public bool Contains(IMethodSymbol method) => _keys.Contains((DuckMethodRef.MetadataName(method.ContainingType), method.Name));
+    public bool Contains(IMethodSymbol method) =>
+        KnownSymbols.IsDuckTyped(method) && _keys.Contains((DuckMethodRef.MetadataName(method.ContainingType), method.Name));
 
     public bool Equals(DuckTypedMethodIndex? other) => other is not null && _methods.Equals(other._methods);
 

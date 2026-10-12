@@ -42,7 +42,8 @@ internal static class MethodGroupAnalysis
 
         var semanticModel = compilation.GetSemanticModel(methodGroup.SyntaxTree);
         var symbolInfo = semanticModel.GetSymbolInfo(methodGroup, ct);
-        var duckMethod = (symbolInfo.Symbol as IMethodSymbol ?? symbolInfo.CandidateSymbols.OfType<IMethodSymbol>().FirstOrDefault())?.OriginalDefinition;
+        // Until the overload exists the group binds to nothing, and its candidates include the regular overloads sharing the name.
+        var duckMethod = (symbolInfo.Symbol as IMethodSymbol ?? symbolInfo.CandidateSymbols.OfType<IMethodSymbol>().FirstOrDefault(KnownSymbols.IsDuckTyped))?.OriginalDefinition;
         if (duckMethod is null || duckMethod.IsGenericMethod || duckMethod.DeclaringSyntaxReferences.Length == 0 || !duckMethods.Contains(duckMethod))
             return null;
 

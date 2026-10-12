@@ -62,7 +62,7 @@ internal static class DuckTypedMethodLookup
             .FirstOrDefault(m => m is not null);
     }
 
-    private static ITypeSymbol? GetReceiverType(SemanticModel semanticModel, InvocationExpressionSyntax invocation, CancellationToken ct) =>
+    public static ITypeSymbol? GetReceiverType(SemanticModel semanticModel, InvocationExpressionSyntax invocation, CancellationToken ct) =>
         InvocationSyntax.GetReceiver(invocation) is { } receiver
             ? semanticModel.GetTypeInfo(receiver, ct).Type
             : semanticModel.GetEnclosingSymbol(invocation.SpanStart, ct)?.ContainingType;

@@ -28,8 +28,12 @@ internal static class InterceptorEmitter
     }
 
     // Keeps the intercepted overload's signature, but calls the [DuckTyped] method with named arguments, so its own defaults apply.
-    public static string ForRedirect(InterceptableLocation location, IMethodSymbol overload, IMethodSymbol duckMethod, IEnumerable<string> arguments) =>
-        Interceptor(location, duckMethod, "", WithReceiver(overload, overload.Parameters.Select(p => SourceSyntax.Parameter(p, p.Type.ToDisplayString()))), arguments);
+    // An inherited overload is intercepted as the forwarder redeclaring it in the [DuckTyped] method's class.
+    public static string ForRedirect(InterceptableLocation location, IMethodSymbol overload, IMethodSymbol duckMethod, IEnumerable<string> arguments)
+    {
+        var parameters = overload.Parameters.Select(p => SourceSyntax.Parameter(p, p.Type.ToDisplayString()));
+        return Interceptor(location, duckMethod, "", WithReceiver(overload.IsStatic, duckMethod.ContainingType, ReceiverRefKind(overload), parameters), arguments);
+    }
 
     public static string ForConversion(InterceptableLocation location, string returnType, string parameters, string body) =>
         $"        {location.GetInterceptsLocationAttributeSyntax()}\n" +
@@ -53,13 +57,11 @@ internal static class InterceptorEmitter
 
     private static bool CanBeNamed(ITypeSymbol type) => !type.IsAnonymousType && TypeVisibility.IsNameable(type);
 
-    private static IEnumerable<string> WithReceiver(IMethodSymbol method, IEnumerable<string> parameters)
-    {
-        if (method.IsStatic)
-            return parameters;
+    private static IEnumerable<string> WithReceiver(IMethodSymbol method, IEnumerable<string> parameters) =>
+        WithReceiver(method.IsStatic, method.ContainingType, ReceiverRefKind(method), parameters);
 
-        return parameters.Prepend($"this {ReceiverRefKind(method)}global::{method.ContainingType.ToDisplayString()} @this");
-    }
+    private static IEnumerable<string> WithReceiver(bool isStatic, INamedTypeSymbol receiverType, string receiverRefKind, IEnumerable<string> parameters) =>
+        isStatic ? parameters : parameters.Prepend($"this {receiverRefKind}global::{receiverType.ToDisplayString()} @this");
 
     // Struct receivers are passed by reference, so mutations made by the method reach the caller's value.
     private static string ReceiverRefKind(IMethodSymbol method) => method switch

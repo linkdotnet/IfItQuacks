@@ -17,12 +17,13 @@ internal static class AdapterCastFinder
         foreach (var (value, type, kind, syntax) in body.Descendants().SelectMany(Candidates))
         {
             // An interface or type parameter may still be implemented by the adapter, so only concrete types are certain to miss.
-            if (Unconverted(value) is IParameterReferenceOperation { Parameter: var parameter } &&
+            if (Unconverted(value) is IParameterReferenceOperation { Parameter: var parameter } reference &&
                 shapes.TryGetValue(parameter, out var shape) &&
                 type is { TypeKind: not (TypeKind.Interface or TypeKind.TypeParameter or TypeKind.Error) } &&
                 !compilation.ClassifyCommonConversion(parameter.Type, type).IsImplicit)
             {
-                yield return Diagnostic.Create(Diagnostics.AdapterCast, syntax.GetLocation(),
+                // The parameter reference is where the code fix inserts 'Duck.Unwrap'.
+                yield return Diagnostic.Create(Diagnostics.AdapterCast, syntax.GetLocation(), [reference.Syntax.GetLocation()],
                     parameter.Name, shape.ToDisplayString(), kind, type.ToDisplayString());
             }
         }

@@ -185,7 +185,7 @@ internal readonly struct SequenceAdapter_IEnumerable_INamed__List_Person_ : IEnu
 }
 ```
 
-`IReadOnlyCollection<T>` adds `Count` and `IReadOnlyList<T>` the indexer, both forwarded to the source. Nothing is copied, so the wrapper stays a view - and each enumeration allocates one adapter per element.
+`IReadOnlyCollection<T>` adds `Count` and `IReadOnlyList<T>` the indexer, both forwarded to the source. `ICollection<T>` and `IList<T>` forward their writes too, after unwrapping the value to the original element, and an element that is itself a sequence gets a wrapper of its own. Nothing is copied, so the wrapper stays a view - and each enumeration allocates one adapter per element.
 
 ## Duck.To
 

@@ -69,7 +69,7 @@ internal static class DuckTypedMethodValidator
     // Without a lower priority the generic fallback would take the calls meant for the other overload and throw at runtime.
     private static string? FindOverloadNeedingPriority(IMethodSymbol method, Compilation compilation) =>
         !method.IsGenericMethod && !KnownSymbols.SupportsOverloadPriority(compilation) &&
-        UserDeclaredMethods(method.ContainingType, method.Name).FirstOrDefault(m => m.MethodKind == MethodKind.Ordinary && !KnownSymbols.IsDuckTyped(m)) is { } overload
+        InheritedOverloads.UserDeclaredMethods(method.ContainingType, method.Name).FirstOrDefault(m => m.MethodKind == MethodKind.Ordinary && !KnownSymbols.IsDuckTyped(m)) is { } overload
             ? $"it is overloaded by '{Display(overload)}', which requires C# 13"
             : null;
 
@@ -79,7 +79,7 @@ internal static class DuckTypedMethodValidator
             return null;
 
         var variants = FallbackSignature.GetGenericParameterSubsets(duckParameters).ToImmutableArray();
-        return UserDeclaredMethods(method.ContainingType, method.Name).FirstOrDefault(m =>
+        return InheritedOverloads.UserDeclaredMethods(method.ContainingType, method.Name).FirstOrDefault(m =>
                    m is { MethodKind: MethodKind.Ordinary, IsGenericMethod: true } && !KnownSymbols.IsDuckTyped(m) &&
                    variants.Any(genericParameters => FallbackSignature.Matches(m, method, genericParameters))) is { } conflict
             ? $"it is overloaded by '{Display(conflict)}', which its generated fallback would collide with"
@@ -95,28 +95,17 @@ internal static class DuckTypedMethodValidator
             : null;
     }
 
-    // Overload resolution drops a base type's methods once a method of the derived type applies, whatever its priority,
-    // so the generated fallback would take the inherited method's calls and throw at runtime.
-    // An override counts as declared by the base type, and methods of System.Object are inherited like any other.
+    // The fallback's lower priority only lets an inherited overload win once it is redeclared next to it, which needs C# 13 like any overload.
     private static string? FindHiddenInheritedOverload(IMethodSymbol method, Compilation compilation)
     {
-        if (method.IsGenericMethod)
-            return null;
+        var inherited = InheritedOverloads.Find(method, compilation);
+        if (inherited.Unsupported is { } unsupported)
+            return $"it is overloaded by the inherited '{Display(unsupported)}', which its generated fallback would hide";
 
-        for (var type = method.ContainingType.BaseType; type is not null; type = type.BaseType)
-        {
-            if (UserDeclaredMethods(type, method.Name).FirstOrDefault(m =>
-                    m.MethodKind == MethodKind.Ordinary && compilation.IsSymbolAccessibleWithin(m, method.ContainingType) &&
-                    !method.Overrides(m)) is { } inherited)
-                return $"it is overloaded by the inherited '{Display(inherited)}', which its generated fallback would hide";
-        }
-
-        return null;
+        return !inherited.Forwarded.IsEmpty && !KnownSymbols.SupportsOverloadPriority(compilation)
+            ? $"it is overloaded by the inherited '{Display(inherited.Forwarded[0])}', which requires C# 13"
+            : null;
     }
-
-    // The analyzer validates against a compilation that already contains the generated fallbacks, which aren't the user's overloads.
-    private static IEnumerable<IMethodSymbol> UserDeclaredMethods(INamedTypeSymbol type, string name) =>
-        type.GetMembers(name).OfType<IMethodSymbol>().Where(m => !m.DeclaringSyntaxReferences.Any(r => GeneratedCode.IsGeneratedFile(r.SyntaxTree.FilePath)));
 
     private static string Display(ISymbol symbol) => symbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
 }

@@ -372,4 +372,40 @@ public class MappedShapeTests
 
         Assert.Contains("IFITQUACKS011", GeneratorTestHelper.GetDiagnosticIds(source));
     }
+
+    [Fact]
+    public void IncludeMethods_WithoutPick_SkipsObjectAndCompilerGeneratedMembers()
+    {
+        const string source = """
+            using IfItQuacks;
+
+            public class Customer
+            {
+                public string Name { get; set; } = "Steven";
+                public string Describe() => Name;
+                public override string ToString() => "customer";
+            }
+
+            public record Order(int Id)
+            {
+                public string Label() => $"#{Id}";
+            }
+
+            [DuckShape<Customer>(IncludeMethods = true)]
+            public partial interface IDescribable;
+
+            [DuckShape<Order>(IncludeMethods = true)]
+            public partial interface ILabelled;
+
+            public class Robot { public string Name { get; set; } = "R2"; public string Describe() => "robot"; }
+            public class Ticket { public int Id => 7; public string Label() => "ticket"; }
+
+            public static class Entry
+            {
+                public static string Run() => Duck.As<IDescribable>(new Robot()).Describe() + "|" + Duck.As<ILabelled>(new Ticket()).Label();
+            }
+            """;
+
+        Assert.Equal("robot|ticket", GeneratorTestHelper.CompileAndRun(source));
+    }
 }

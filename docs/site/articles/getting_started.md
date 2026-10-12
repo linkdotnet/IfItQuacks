@@ -270,7 +270,7 @@ Ops.Join(new[] { new Pet() });
 IReadOnlyList<INameable> view = Duck.As<IReadOnlyList<INameable>>(people); // Count and the indexer included
 ```
 
-Only `IEnumerable<T>`, `IReadOnlyCollection<T>` and `IReadOnlyList<T>` qualify: they use their element type in output position only. `ICollection<T>` and `IList<T>` would need the adaptation to run backwards, so they are not supported.
+`IEnumerable<T>`, `IReadOnlyCollection<T>`, `IReadOnlyList<T>`, `ICollection<T>`, `IList<T>`, `IAsyncEnumerable<T>` and the values of `IReadOnlyDictionary<TKey, TValue>` qualify, and so do nested sequences such as `IEnumerable<IEnumerable<INameable>>`. A value written to an adapted `ICollection<T>` or `IList<T>` is unwrapped to the original element; anything else throws an `ArgumentException`.
 
 ## Static members and operators
 
@@ -392,7 +392,7 @@ Console.WriteLine(dto.Email);              // steven@example.com - the copy is i
 
 The target is filled through the constructor taking the most parameters the source can fill, and every remaining settable property or field is set from the member of the same name. Anything the source can't fill is reported with [`IFITQUACKS009`](diagnostics.md#ifitquacks009).
 
-`Duck.To` is not a mapping library either: name for name, assignable types, no renaming, no nested projection and no user-defined conversions - the same rules as everywhere else.
+A member of another type of your own is built from the source member the same way, a collection is copied element by element into a list, array, set or dictionary, and an enum is converted by member name, so `Duck.To<OrderDto>(order)` also turns `order.Address` into an `AddressDto`. Beyond that it is not a mapping library: name for name, assignable types, no renaming and no user-defined conversions - the same rules as everywhere else.
 
 Runnable examples live in [`samples`](https://github.com/linkdotnet/IfItQuacks/tree/main/samples), one project per showcase:
 

@@ -6,6 +6,38 @@ All notable changes to **IfItQuacks** will be documented in this file. The proje
 
 ## [Unreleased]
 
+### Added
+
+- Code fixes, shipped as `IfItQuacks.CodeFixes.dll` next to the generator: make the type `partial` for `IFITQUACKS002` and
+  `IFITQUACKS010`, rename a member that only differs in casing (`did you mean 'name'?`) for `IFITQUACKS001`, and use
+  `Duck.Unwrap` for the cast or type test reported by `IFITQUACKS012`.
+- `Duck.To` builds nested objects, including recursive types, and copies collections element by element: `List<T>`,
+  arrays, `HashSet<T>`, `Dictionary<TKey, TValue>` (keeping its comparer) and their interfaces. Enums are converted by
+  member name, `[Flags]` enums by value. A `null` nested object, collection or enum stays `null`.
+- A method returning `Task<T>` or `ValueTask<T>` satisfies an interface method returning `Task<U>` or `ValueTask<U>`
+  whenever `T` is assignable to `U`, e.g. `Task<Person>` for `Task<IPerson>`, and any `Task` or `ValueTask` satisfies one
+  returning a plain `Task` or `ValueTask`.
+- `IAsyncEnumerable<T>`, `ICollection<T>`, `IList<T>` and `IReadOnlyDictionary<TKey, TValue>` are adapted element by element,
+  and so are nested sequences like `IEnumerable<IEnumerable<INamed>>`. A value written to an adapted `ICollection<T>` or
+  `IList<T>` is unwrapped to the original element. A `List<Person>` with `Person : INamed` is an `IList<INamed>` too.
+- A `[DuckTyped]` method can share its name with a non-virtual method inherited from a base type, e.g. `Greet(object)`;
+  the generator redeclares that method next to the fallback, attributes like `[CallerMemberName]` and `[Obsolete]`
+  included, so its calls keep working (C# 13).
+
+### Fixed
+
+- `[DuckShape<T>(IncludeMethods = true)]` without `Pick` derived the members of `object`, and from a record source also
+  its synthesized members, which failed the build in generated code.
+- An `init`-only property derived by `[DuckShape<T>]` is get-only in the interface, but a type satisfying it still had to
+  have a setter.
+- A method group like `Func<Car, string> f = Ops.Describe` could get its generated overload for a regular overload
+  declared before the `[DuckTyped]` method.
+
+### Changed
+
+- `Duck.To` can fill constructor parameters and members that need a nested object or a collection copied, so it may now
+  pick a constructor with more parameters than before.
+
 ## [v1.5.5] - 2026-10-04
 
 ### Added

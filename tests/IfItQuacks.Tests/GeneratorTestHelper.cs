@@ -12,17 +12,20 @@ namespace IfItQuacks.Tests;
 
 internal static class GeneratorTestHelper
 {
-    private static readonly IReadOnlyList<MetadataReference> References = BuildReferences();
+    public static readonly IReadOnlyList<MetadataReference> References = BuildReferences();
 
-    private static readonly CSharpParseOptions ParseOptions = new CSharpParseOptions(LanguageVersion.Latest)
+    public static readonly CSharpParseOptions ParseOptions = new CSharpParseOptions(LanguageVersion.Latest)
         .WithFeatures([new KeyValuePair<string, string>("InterceptorsNamespaces", "IfItQuacks.Generated")]);
 
     public static (Compilation Compilation, ImmutableArray<Diagnostic> Diagnostics) RunGenerator(string source, OutputKind outputKind = OutputKind.DynamicallyLinkedLibrary,
         IEnumerable<MetadataReference>? additionalReferences = null, LanguageVersion languageVersion = LanguageVersion.Latest)
     {
         var parseOptions = ParseOptions.WithLanguageVersion(languageVersion);
-        var compilation = CreateCompilation(outputKind, additionalReferences, parseOptions, source);
+        return RunGenerator(CreateCompilation(outputKind, additionalReferences, parseOptions, source), parseOptions);
+    }
 
+    public static (Compilation Compilation, ImmutableArray<Diagnostic> Diagnostics) RunGenerator(Compilation compilation, CSharpParseOptions parseOptions)
+    {
         var generator = new IfItQuacksGenerator();
         GeneratorDriver driver = CSharpGeneratorDriver.Create([generator.AsSourceGenerator()], parseOptions: parseOptions);
 

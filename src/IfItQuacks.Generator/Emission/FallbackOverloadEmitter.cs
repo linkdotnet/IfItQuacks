@@ -12,9 +12,9 @@ internal static class FallbackOverloadEmitter
         var variants = FallbackSignature.GetGenericParameterSubsets(DuckTypedSignature.GetDuckParameters(method))
             .Select(genericParameters => EmitVariant(method, genericParameters, yieldsToOverloads));
 
-        var methodSource = string.Join("\n\n", variants);
-        if (NeedsForwarder(method))
-            methodSource += "\n\n" + EmitForwarder(method);
+        var methodSource = string.Join("\n\n", variants
+            .Concat(NeedsForwarder(method) ? [EmitForwarder(method)] : [])
+            .Concat(InheritedOverloads.Find(method, compilation).Forwarded.Select(inherited => InheritedOverloads.EmitForwarder(inherited, method.ContainingType, compilation))));
 
         var priorityAttributePolyfill = yieldsToOverloads && KnownSymbols.LacksOverloadPriorityAttribute(compilation)
             ? EmbeddedSources.OverloadPriorityAttributePolyfill + "\n"

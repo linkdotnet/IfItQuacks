@@ -141,13 +141,32 @@ internal static class ShapeMatcher
     // Explains the likeliest reason a member wasn't found: it exists, just not as a public instance member, or with other casing.
     private static string NearMiss(INamedTypeSymbol concreteType, string name)
     {
-        var members = GetAllMembers(concreteType).Where(m => !m.IsImplicitlyDeclared).ToList();
-        if (members.FirstOrDefault(m => m.Name == name) is { } sameName)
+        if (GetAllMembers(concreteType).FirstOrDefault(m => !m.IsImplicitlyDeclared && m.Name == name) is { } sameName)
             return sameName.IsStatic ? $" ('{name}' is static)" : $" ('{name}' is not public)";
 
-        return members.FirstOrDefault(m => IsPublicInstance(m) && string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase)) is { } otherCase
-            ? $" - did you mean '{otherCase.Name}'?"
-            : "";
+        return FindOtherCasing(concreteType, name) is { } otherCase ? $" - did you mean '{otherCase.Name}'?" : "";
+    }
+
+    /// <summary>The members missing from <paramref name="concreteType"/> that it declares under another casing, as a rename can fix them.</summary>
+    public static IEnumerable<(string Actual, string Expected)> FindOtherCasings(INamedTypeSymbol shape, INamedTypeSymbol concreteType, Compilation compilation)
+    {
+        if (concreteType.DelegateInvokeMethod is not null)
+            return [];
+
+        var mapped = MappedShape.TryGet(shape);
+        return GetShapeMembers(shape).Where(IsRequired)
+            .Where(m => m is not IPropertySymbol { IsIndexer: true } && FindCounterpart(m, concreteType, compilation, mapped) is null)
+            .Select(m => (Expected: m.Name, Other: FindOtherCasing(concreteType, m.Name)))
+            .Where(m => m.Other is not null)
+            .Select(m => (m.Other!.Name, m.Expected));
+    }
+
+    private static ISymbol? FindOtherCasing(INamedTypeSymbol concreteType, string name)
+    {
+        var members = GetAllMembers(concreteType).Where(m => !m.IsImplicitlyDeclared).ToList();
+        return members.Any(m => m.Name == name)
+            ? null
+            : members.FirstOrDefault(m => IsPublicInstance(m) && string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase));
     }
 
     private static IMethodSymbol? FindMethod(INamedTypeSymbol concreteType, IMethodSymbol shapeMethod, Compilation compilation)
@@ -173,7 +192,9 @@ internal static class ShapeMatcher
 
             // A void shape method discards the result, as TypeScript does for functions typed to return void.
             var returnMatches = shapeMethod.ReturnsVoid ||
-                                (!candidate.ReturnsVoid && candidate.RefKind == RefKind.None && IsAssignable(candidate.ReturnType, shapeMethod.ReturnType, compilation));
+                                (!candidate.ReturnsVoid && candidate.RefKind == RefKind.None &&
+                                 (IsAssignable(candidate.ReturnType, shapeMethod.ReturnType, compilation) ||
+                                  (shapeMethod.Parameters.All(p => p.RefKind == RefKind.None) && IsAwaitableMatch(candidate.ReturnType, shapeMethod.ReturnType, compilation))));
             if (assignable is null && returnMatches && ParametersMatch(candidate.Parameters, shapeMethod.Parameters, compilation))
                 assignable = candidate;
         }
@@ -196,9 +217,10 @@ internal static class ShapeMatcher
                                  DelegateTypeOf(m) is { DelegateInvokeMethod: { } invoke } &&
                                  IsDelegateMatch(shapeMethod, invoke, compilation));
 
-    /// <summary>Under <c>Readonly</c> the derived member has no setter, so no counterpart needs one either.</summary>
+    /// <summary>Under <c>Readonly</c>, or for an init-only source property, the derived member has no setter, so no counterpart needs one either.</summary>
     private static bool NeedsSetter(ISymbol shapeMember, MappedShape? mapped) =>
-        HasSetter(shapeMember) && (mapped is null || mapped.KeepsSetter(shapeMember));
+        HasSetter(shapeMember) &&
+        (mapped is null || (mapped.KeepsSetter(shapeMember) && !(mapped.IsDerived(shapeMember) && shapeMember is IPropertySymbol { SetMethod.IsInitOnly: true })));
 
     // A field derived by [DuckShape<>] is declared as a property in the generated interface, so it is matched like one.
     private static bool HasSetter(ISymbol shapeMember) => shapeMember is IPropertySymbol { SetMethod: not null } or IFieldSymbol { IsReadOnly: false };
@@ -298,6 +320,24 @@ internal static class ShapeMatcher
         }
         return true;
     }
+
+    // Awaiting converts the result like any other value, so Task<Person> stands in for Task<INamed>, and Task and ValueTask for each other.
+    // A shape returning a plain Task or ValueTask discards the result. The adapter awaits, which async methods only allow without by-reference parameters.
+    private static bool IsAwaitableMatch(ITypeSymbol source, ITypeSymbol destination, Compilation compilation) =>
+        Awaitable(source) is { } awaitableSource && Awaitable(destination) is { } awaitableDestination &&
+        (awaitableDestination.Arity == 0 ||
+         (awaitableSource.Arity == 1 && IsAssignable(awaitableSource.TypeArguments[0], awaitableDestination.TypeArguments[0], compilation)));
+
+    /// <summary>Whether a member returning <paramref name="candidateReturn"/> has to be awaited to return <paramref name="shapeReturn"/>.</summary>
+    public static bool NeedsAwait(ITypeSymbol candidateReturn, ITypeSymbol shapeReturn) =>
+        !SymbolEqualityComparer.Default.Equals(candidateReturn, shapeReturn) &&
+        Awaitable(candidateReturn) is { } candidate && Awaitable(shapeReturn) is { } shape &&
+        !(shape is { Name: "Task", Arity: 0 } && candidate.Name == "Task");
+
+    private static INamedTypeSymbol? Awaitable(ITypeSymbol type) =>
+        type is INamedTypeSymbol { Name: "Task" or "ValueTask", Arity: <= 1, ContainingNamespace: { Name: "Tasks", ContainingNamespace: { Name: "Threading", ContainingNamespace: { Name: "System", ContainingNamespace.IsGlobalNamespace: true } } } } awaitable
+            ? awaitable
+            : null;
 
     public static bool IsAssignable(ITypeSymbol source, ITypeSymbol destination, Compilation compilation)
     {

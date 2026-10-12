@@ -39,7 +39,7 @@ static string Wrap<T>(T value) => Ops.Describe(value); // T is open: runtime fal
 
 ## Members match by name and assignable type
 
-Member types only have to be *assignable* (identity, reference, boxing, numeric or nullable conversions). Nothing else is bridged: no renaming, no user-defined conversions, and `ref`/`out`/`in` parameters and events have to match exactly.
+Member types only have to be *assignable* (identity, reference, boxing, numeric or nullable conversions). A method returning `Task<T>` or `ValueTask<T>` also satisfies one returning `Task<U>` or `ValueTask<U>` if `T` is assignable to `U`; the adapter awaits the result. Nothing else is bridged: no renaming, no user-defined conversions, and `ref`/`out`/`in` parameters and events have to match exactly.
 
 ```csharp
 public interface IPerson { string Name { get; } }
@@ -67,7 +67,7 @@ public partial interface IOps { [DuckTyped] static string G(INamed n) => n.Name;
 file partial class Ops4 { [DuckTyped] public static string H(INamed n) => n.Name; }       // IFITQUACKS004: file-local
 ```
 
-A `[DuckTyped]` method can share its name with regular overloads, e.g. `Greet(object)`. A call binding to such an overload is only redirected to the `[DuckTyped]` method if C# would pick it had the argument implemented the interface. That redirect is skipped, so the call stays on your overload, for anonymous types, `params` parameters, generic overloads, extension-method calls on a receiver and overloads with a different return type. This needs C# 13, also on .NET 8 ([`IFITQUACKS004`](diagnostics.md#ifitquacks004) otherwise).
+A `[DuckTyped]` method can share its name with regular overloads, e.g. `Greet(object)`, also with a non-virtual or static one inherited from a base type, which the generator redeclares next to its fallback. An inherited `virtual` or generic overload, an overload a struct inherits and any inherited overload of a `[DuckTyped]` override are reported with [`IFITQUACKS004`](diagnostics.md#ifitquacks004): redeclaring a virtual method would stop types further down from overriding it. A call binding to such an overload is only redirected to the `[DuckTyped]` method if C# would pick it had the argument implemented the interface. That redirect is skipped, so the call stays on your overload, for anonymous types, `params` parameters, generic overloads, extension-method calls on a receiver and overloads with a different return type. This needs C# 13, also on .NET 8 ([`IFITQUACKS004`](diagnostics.md#ifitquacks004) otherwise).
 
 `null`, `default` and omitted interface arguments work for methods with **up to four** interface parameters. Beyond that, every interface parameter needs an argument with a type.
 
@@ -126,14 +126,18 @@ Ops.Render((a, b) => a - b, 1);             // CS8917: an untyped lambda has no 
 
 ## Sequences
 
-Only interfaces using their element type in output position are adapted element by element, and only one level deep:
+`IEnumerable<T>`, `IReadOnlyCollection<T>`, `IReadOnlyList<T>`, `ICollection<T>`, `IList<T>`, `IAsyncEnumerable<T>` and the values of `IReadOnlyDictionary<TKey, TValue>` are adapted element by element, nested sequences included:
 
 ```csharp
-Ops.Join(new List<Person>());              // works: IEnumerable<INamed>
-Duck.As<IReadOnlyList<INamed>>(people);    // works: Count and the indexer included
-Duck.As<IList<INamed>>(people);            // IFITQUACKS001: Add(INamed) would have to run backwards
-Duck.As<IEnumerable<IEnumerable<INamed>>>(groups); // IFITQUACKS001: not nested
+Ops.Join(new List<Person>());                      // works: IEnumerable<INamed>
+Duck.As<IReadOnlyList<INamed>>(people);            // works: Count and the indexer included
+Duck.As<IList<INamed>>(people).Add(view[0]);       // works: the adapter is unwrapped to its Person
+Duck.As<IList<INamed>>(people).Add(new Robot());   // ArgumentException: not a Person
+Duck.As<IEnumerable<IEnumerable<INamed>>>(groups); // works
+Duck.As<IList<INamed>>(namedPeople);               // works: the elements already implement INamed
 ```
+
+A writable collection only takes back what it can store: an adapter it handed out, or a value of the original element type. Dictionary keys are not adapted, so they have to be the same type.
 
 Every enumeration allocates one wrapper plus one adapter per element, so a sequence you walk repeatedly is cheaper materialised once.
 
@@ -152,14 +156,19 @@ Static members, generic methods and `init`-only setters of the source are not de
 
 ## Copying with `Duck.To`
 
-`Duck.To` matches members by name and assignable type, like everything else, and stops there:
+`Duck.To` matches members by name and assignable type, like everything else. A member of another type of your own is built the same way, a collection is copied element by element and an enum is converted by member name:
 
 ```csharp
 Duck.To<CustomerDto>(customer);               // works
+Duck.To<OrderDto>(order);                     // works: Address becomes an AddressDto, List<Line> a LineDto[]
 Duck.To<INamed>(customer);                    // IFITQUACKS009: interfaces are Duck.As' job
 Duck.To<CustomerDto>(new { FullName = "x" }); // IFITQUACKS009: no renaming
-Duck.To<OrderDto>(order);                     // IFITQUACKS009 if a nested object would have to be converted too
+Duck.To<ReleaseDto>(release);                 // IFITQUACKS009: System.Version isn't built member by member
 ```
+
+Framework types (`System.*`, `Microsoft.*`) are never built member by member. A collection target has to be a `List<T>`, an array, a `HashSet<T>`, a `Dictionary<TKey, TValue>` or one of their interfaces; dictionary keys aren't converted, only their values. A member whose type is already assignable is not copied at all, so a `List<Line>` going into a `List<Line>` is the same list.
+
+Every name of the source enum has to exist in the target enum. A `[Flags]` enum is converted by value instead, so its names need the same values on both sides, and a value without a name throws `ArgumentOutOfRangeException` for any other enum.
 
 Constructor parameters are matched to source members by name, ignoring case. A target with an inaccessible constructor, an abstract target and a `ref struct` target are all reported.
 

@@ -268,7 +268,15 @@ internal static class AdapterEmitter
             SymbolEqualityComparer.Default.Equals(p.Type, counterpart.Parameters[i].Type)
                 ? SourceSyntax.Argument(p)
                 : $"({counterpart.Parameters[i].Type.ToDisplayString()}){SourceSyntax.Identifier(p.Name)}"));
-        code.AppendLine($"        {SourceSyntax.RefReturnPrefix(method.RefKind)}{MemberType(method, method.ReturnType, mapped)} {explicitInterfaceName(method)}.{method.Name}({parameters}) => {RefExpressionPrefix(method.RefKind)}{receiver}.{counterpart.Name}({args});");
+        var call = $"{receiver}.{counterpart.Name}({args})";
+        // Only awaiting converts a Task<Person> into a Task<INamed>; identical types are forwarded as they are.
+        if (ShapeMatcher.NeedsAwait(counterpart.ReturnType, method.ReturnType))
+        {
+            code.AppendLine($"        async {MemberType(method, method.ReturnType, mapped)} {explicitInterfaceName(method)}.{method.Name}({parameters}) => await {call}.ConfigureAwait(false);");
+            return;
+        }
+
+        code.AppendLine($"        {SourceSyntax.RefReturnPrefix(method.RefKind)}{MemberType(method, method.ReturnType, mapped)} {explicitInterfaceName(method)}.{method.Name}({parameters}) => {RefExpressionPrefix(method.RefKind)}{call};");
     }
 
     // A member holding a delegate implements the interface method through its Invoke.

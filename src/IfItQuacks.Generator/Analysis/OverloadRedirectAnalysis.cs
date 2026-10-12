@@ -11,11 +11,28 @@ namespace IfItQuacks.Generator;
 /// </summary>
 internal static class OverloadRedirectAnalysis
 {
-    public static IMethodSymbol? FindDuckTypedOverload(IMethodSymbol bound, DuckTypedMethodIndex duckMethods) =>
-        bound is { MethodKind: MethodKind.Ordinary, IsGenericMethod: false } && !KnownSymbols.IsDuckTyped(bound)
-            ? bound.ContainingType.GetMembers(bound.Name).OfType<IMethodSymbol>().FirstOrDefault(m =>
-                m is { IsGenericMethod: false, DeclaringSyntaxReferences.Length: > 0 } && KnownSymbols.IsDuckTyped(m) && duckMethods.Contains(m))
-            : null;
+    // An inherited overload is redeclared next to a [DuckTyped] method in a derived type, which is where a call through that type ends up.
+    public static IMethodSymbol? FindDuckTypedOverload(IMethodSymbol bound, ITypeSymbol? receiverType, DuckTypedMethodIndex duckMethods, Compilation compilation)
+    {
+        if (bound is not { MethodKind: MethodKind.Ordinary, IsGenericMethod: false } || KnownSymbols.IsDuckTyped(bound))
+            return null;
+
+        if (FindDuckTypedMethod(bound.ContainingType, bound.Name, duckMethods) is { } sameType)
+            return sameType;
+
+        for (var type = receiverType as INamedTypeSymbol; type is not null && !SymbolEqualityComparer.Default.Equals(type, bound.ContainingType); type = type.BaseType)
+        {
+            if (FindDuckTypedMethod(type, bound.Name, duckMethods) is { } duckMethod &&
+                InheritedOverloads.Find(duckMethod, compilation).Forwarded.Contains(bound.OriginalDefinition, SymbolEqualityComparer.Default))
+                return duckMethod;
+        }
+
+        return null;
+    }
+
+    private static IMethodSymbol? FindDuckTypedMethod(INamedTypeSymbol type, string name, DuckTypedMethodIndex duckMethods) =>
+        type.GetMembers(name).OfType<IMethodSymbol>().FirstOrDefault(m =>
+            m is { IsGenericMethod: false, DeclaringSyntaxReferences.Length: > 0 } && KnownSymbols.IsDuckTyped(m) && duckMethods.Contains(m));
 
     public static CallSiteOutput? Analyze(SemanticModel semanticModel, InvocationExpressionSyntax invocation,
         IMethodSymbol overload, IMethodSymbol duckMethod, CancellationToken ct)

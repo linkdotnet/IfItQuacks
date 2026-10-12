@@ -25,10 +25,24 @@ internal static class AdapterFactory
     private static AdapterSet CreateSequenceAdapter(INamedTypeSymbol shape, ITypeSymbol sequenceType, SequenceAdapterEmitter.SequenceMatch match,
         Compilation compilation)
     {
-        var elementName = AdapterEmitter.GetAdapterName(match.ElementShape, match.SourceElement);
-        var element = new GeneratedFile(elementName, AdapterEmitter.Emit(match.ElementShape, match.SourceElement, elementName, compilation));
+        AdapterSet? element;
+        if (SequenceAdapterEmitter.IsAssignableElement(match, compilation))
+        {
+            element = null;
+        }
+        else if (SequenceAdapterEmitter.IsNamedElement(match, compilation))
+        {
+            var sourceElement = (INamedTypeSymbol)match.SourceElement;
+            var elementName = AdapterEmitter.GetAdapterName(match.ElementShape, sourceElement);
+            element = new AdapterSet(elementName, [new GeneratedFile(elementName, AdapterEmitter.Emit(match.ElementShape, sourceElement, elementName, compilation))], elementName);
+        }
+        else
+        {
+            element = CreateSequenceAdapter(match.ElementShape, match.SourceElement, SequenceAdapterEmitter.TryMatch(match.ElementShape, match.SourceElement, compilation)!, compilation);
+        }
+
         var sequenceName = SequenceAdapterEmitter.GetAdapterName(shape, sequenceType);
-        var sequence = new GeneratedFile(sequenceName, SequenceAdapterEmitter.Emit(shape, sequenceType, match, elementName, sequenceName));
-        return new AdapterSet(sequenceName, [sequence, element], $"global::{GeneratedCode.Namespace}.{sequenceName}");
+        var sequence = new GeneratedFile(sequenceName, SequenceAdapterEmitter.Emit(shape, sequenceType, match, element?.Name, sequenceName));
+        return new AdapterSet(sequenceName, [sequence, .. element?.Files ?? []], $"global::{GeneratedCode.Namespace}.{sequenceName}");
     }
 }

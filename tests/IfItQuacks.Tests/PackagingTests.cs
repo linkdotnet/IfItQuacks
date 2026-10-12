@@ -25,6 +25,16 @@ public class PackagingTests
         Assert.Equal("build;buildTransitive", (string?)packed.Attribute("PackagePath"));
     }
 
+    [Fact]
+    public void CodeFixes_ArePackedNextToTheGenerator()
+    {
+        var project = XDocument.Load(Path.Combine(RepositoryRoot(), "src", "IfItQuacks.Generator", "IfItQuacks.Generator.csproj"));
+
+        var packed = project.Descendants("None").Single(e => ((string?)e.Attribute("Include"))?.EndsWith("IfItQuacks.CodeFixes.dll", StringComparison.Ordinal) == true);
+
+        Assert.Equal("analyzers/dotnet/cs", (string?)packed.Attribute("PackagePath"));
+    }
+
     // CallerFilePath is remapped for deterministic CI builds, so the root is located from the test output instead.
     private static string RepositoryRoot()
     {

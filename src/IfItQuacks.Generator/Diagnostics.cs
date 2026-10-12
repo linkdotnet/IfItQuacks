@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 
 namespace IfItQuacks.Generator;
@@ -104,8 +105,18 @@ internal static class Diagnostics
                      "fails for these calls, while it succeeds for arguments implementing the interface. Conversion operators can't help: the compiler only " +
                      "sees the interface or type parameter. 'Duck.Unwrap' returns the original instance in both cases.");
 
-    public static Diagnostic CreateShapeMismatch(Location location, ITypeSymbol type, ITypeSymbol shape, string reason) =>
-        Diagnostic.Create(ShapeMismatch, location, type.ToDisplayString(), shape.ToDisplayString(), reason);
+    // Read by the IfItQuacks.CodeFixes rename fix as "actual:Expected;...".
+    public const string RenamesProperty = "Renames";
+
+    public static Diagnostic CreateShapeMismatch(Location location, ITypeSymbol type, ITypeSymbol shape, string reason,
+        IEnumerable<(string Actual, string Expected)>? renames = null)
+    {
+        var pairs = renames?.Select(r => $"{r.Actual}:{r.Expected}").Distinct().ToList();
+        var properties = pairs is { Count: > 0 }
+            ? ImmutableDictionary<string, string?>.Empty.Add(RenamesProperty, string.Join(";", pairs))
+            : null;
+        return Diagnostic.Create(ShapeMismatch, location, properties, type.ToDisplayString(), shape.ToDisplayString(), reason);
+    }
 
     public static Diagnostic CreateUnsupportedSignature(Location location, IMethodSymbol method, string reason) =>
         Diagnostic.Create(UnsupportedSignature, location, method.Name, reason);

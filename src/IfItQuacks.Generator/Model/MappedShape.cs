@@ -73,7 +73,9 @@ internal sealed record MappedShape(INamedTypeSymbol Shape, ImmutableArray<ISymbo
             IPropertySymbol => true,
             // Backing fields of auto-properties and records are implicitly declared.
             IFieldSymbol { IsConst: false, IsImplicitlyDeclared: false } => true,
-            IMethodSymbol { MethodKind: MethodKind.Ordinary, IsGenericMethod: false } => includeMethods,
+            // Every value already has object's members, and a record's synthesized ones (like '<Clone>$') aren't even nameable.
+            IMethodSymbol { MethodKind: MethodKind.Ordinary, IsGenericMethod: false, IsImplicitlyDeclared: false } method =>
+                includeMethods && method.OverriddenRoot().ContainingType.SpecialType != SpecialType.System_Object,
             IEventSymbol => includeMethods,
             _ => false,
         };

@@ -4,7 +4,7 @@ uid: diagnostics
 
 # Diagnostics
 
-All diagnostics are in the `IfItQuacks` category and reported as errors, except the warning [`IFITQUACKS012`](#ifitquacks012).
+All diagnostics are in the `IfItQuacks` category and reported as errors, except the warning [`IFITQUACKS012`](#ifitquacks012). [`IFITQUACKS001`](#ifitquacks001), [`IFITQUACKS002`](#ifitquacks002), [`IFITQUACKS010`](#ifitquacks010) and [`IFITQUACKS012`](#ifitquacks012) come with a code fix.
 
 ## IFITQUACKS001
 
@@ -20,11 +20,13 @@ public class Rock { public void do() { } }
 Ops.Foo(new Rock()); // error IFITQUACKS001: Type 'Rock' does not structurally satisfy 'IDoable': missing method 'void IDoable.Do()' - did you mean 'do'?
 ```
 
+The code fix renames such a member to the name the interface expects.
+
 ## IFITQUACKS002
 
 **Duck-typed method's containing type must be partial**
 
-The generator adds a fallback overload to the containing type, so it (and every enclosing type) has to be `partial`.
+The generator adds a fallback overload to the containing type, so it (and every enclosing type) has to be `partial`. The code fix adds the missing modifiers.
 
 ## IFITQUACKS003
 
@@ -41,8 +43,8 @@ Reported when
 - the containing type (or one of its enclosing types) is generic,
 - the method is overloaded by another `[DuckTyped]` method of the same name in the same type,
 - the method is overloaded by a generic method with the signature of its generated fallback overload, e.g. `Greet<T>(T value)` next to `Greet(INamed n)`,
-- a base type has an accessible method of the same name, which the generated fallback would hide (overload resolution ignores a base type's methods once one of the derived type applies, so `OverloadResolutionPriorityAttribute` can't help); this includes the methods of `object`, e.g. a `[DuckTyped]` method named `Equals`,
-- the method is overloaded by a regular method of the same name, but the project uses a language version below C# 13, which is needed for `OverloadResolutionPriorityAttribute` to keep the generated fallback from taking that overload's calls (on .NET 8, set `<LangVersion>13</LangVersion>`),
+- a base type has an accessible method of the same name that the generator can't redeclare next to the fallback: a `virtual`, abstract, generic or `ref`-returning one, one inherited by a struct, or any one when the `[DuckTyped]` method is itself an override (overload resolution ignores a base type's methods once one of the derived type applies, so the fallback would hide them); this includes the virtual methods of `object`, e.g. a `[DuckTyped]` method named `Equals`,
+- the method is overloaded by a regular method of the same name, declared or inherited, but the project uses a language version below C# 13, which is needed for `OverloadResolutionPriorityAttribute` to keep the generated fallback from taking that overload's calls (on .NET 8, set `<LangVersion>13</LangVersion>`),
 - the containing type is an interface or a `file`-local type,
 - a type parameter of a generic method is not used by any interface parameter (it can't be inferred), or
 - the method mixes interface parameters with [duck-typed constraints](getting_started.md#static-members-and-operators), or not all of its type parameters have a single interface constraint used by a parameter.
@@ -122,6 +124,8 @@ Duck.To<PersonDto>(new OnlyName()); // error IFITQUACKS009: no member of the sou
 public interface ICustomerView;   // error IFITQUACKS010: it is not declared 'partial'
 ```
 
+The code fix adds the missing `partial` modifiers.
+
 ## IFITQUACKS011
 
 **Unsupported [DuckShape<>] usage**
@@ -157,3 +161,5 @@ Duck.Unwrap(named) is Person p ? p.Nickname : named.Name;
 ```
 
 Casts and type tests for interfaces and type parameters are not reported, because the adapter may implement those.
+
+The code fix replaces the parameter with `Duck.Unwrap(...)` in the cast or type test.

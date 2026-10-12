@@ -15,7 +15,7 @@ internal static class ArgumentVerifier
             return null;
 
         if (SequenceAdapterEmitter.TryMatch(shape, argumentType, compilation) is { } match)
-            return VerifySequence(argument, shape, argumentType, match);
+            return VerifySequence(argument, shape, argumentType, match, compilation);
 
         if (FindUnsupportedMember(argument, shape) is { } unsupported)
             return unsupported;
@@ -24,7 +24,8 @@ internal static class ArgumentVerifier
             return Diagnostics.CreateShapeMismatch(argument.GetLocation(), argumentType, shape, "only named types and sequences can be adapted");
 
         if ((ShapeMatcher.FindMismatch(shape, concreteType, compilation) ?? FindUnnameableProperty(concreteType)) is { } mismatch)
-            return Diagnostics.CreateShapeMismatch(argument.GetLocation(), concreteType, shape, mismatch);
+            return Diagnostics.CreateShapeMismatch(argument.GetLocation(), concreteType, shape, mismatch,
+                ShapeMatcher.FindOtherCasings(shape, concreteType, compilation));
 
         return FindUnsupportedStruct(concreteType, implementsDirectly) is { } unsupportedStruct
             ? Diagnostics.CreateUnsupportedStructArgument(argument.GetLocation(), concreteType, shape, unsupportedStruct)
@@ -79,13 +80,18 @@ internal static class ArgumentVerifier
     }
 
     private static Diagnostic? VerifySequence(ExpressionSyntax argument, INamedTypeSymbol shape, ITypeSymbol sequenceType,
-        SequenceAdapterEmitter.SequenceMatch match)
+        SequenceAdapterEmitter.SequenceMatch match, Compilation compilation)
     {
         if (FindUnsupportedMember(argument, match.ElementShape) is { } unsupported)
             return unsupported;
 
-        if (FindUnsupportedStruct(match.SourceElement, implementsDirectly: false) is { } unsupportedElement)
+        var assignableElement = SequenceAdapterEmitter.IsAssignableElement(match, compilation);
+        if (FindUnsupportedStruct(match.SourceElement, implementsDirectly: assignableElement) is { } unsupportedElement)
             return Diagnostics.CreateUnsupportedStructArgument(argument.GetLocation(), match.SourceElement, match.ElementShape, unsupportedElement);
+
+        if (!assignableElement && !SequenceAdapterEmitter.IsNamedElement(match, compilation) &&
+            VerifySequence(argument, match.ElementShape, match.SourceElement, SequenceAdapterEmitter.TryMatch(match.ElementShape, match.SourceElement, compilation)!, compilation) is { } nested)
+            return nested;
 
         return FindUnsupportedStruct(sequenceType, implementsDirectly: false) is { } unsupportedStruct
             ? Diagnostics.CreateUnsupportedStructArgument(argument.GetLocation(), sequenceType, shape, unsupportedStruct)

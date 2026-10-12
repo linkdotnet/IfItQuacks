@@ -98,7 +98,7 @@ internal static class ConstraintCallAnalysis
             return Diagnostics.CreateUnsupportedShapeMember(location, shape, unsupportedInstance);
 
         if ((StaticShapeMatcher.FindMismatch(shape, concreteType, compilation) ?? ShapeMatcher.FindMismatch(shape, concreteType, compilation)) is { } mismatch)
-            return Diagnostics.CreateShapeMismatch(location, concreteType, shape, mismatch);
+            return Diagnostics.CreateShapeMismatch(location, concreteType, shape, mismatch, ShapeMatcher.FindOtherCasings(shape, concreteType, compilation));
 
         return ArgumentVerifier.FindUnsupportedStruct(concreteType, implementsDirectly: false) is { } unsupportedStruct
             ? Diagnostics.CreateUnsupportedStructArgument(location, concreteType, shape, unsupportedStruct)
